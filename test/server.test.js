@@ -122,6 +122,9 @@ test("serves host and player screens", async () => {
   assert.equal(joinResponse.status, 200);
   assert.match(joinPage, /id="room-code-input"/);
   assert.match(joinPage, /id="mobile-game-panel"/);
+  assert.match(joinPage, /id="add-ar-object"/);
+  assert.match(joinPage, /id="scale-ar-object-down"/);
+  assert.match(joinPage, /id="scale-ar-object-up"/);
   assert.match(joinPage, /type="module" src="\/join\.js"/);
 });
 
@@ -137,6 +140,10 @@ test("serves the AR module and Three.js runtime", async () => {
 
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
+  assert.match(arModule, /requiredFeatures: \["local", "hit-test"\]/);
+  assert.match(arModule, /getHitTestResults/);
+  assert.match(arModule, /selectstart/);
+  assert.match(arModule, /scaleSelected/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
   assert.equal(threeCoreResponse.status, 200);

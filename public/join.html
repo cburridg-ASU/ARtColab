@@ -43,7 +43,15 @@
           <div class="ar-hud-prompt"><span class="eyebrow">YOUR PROMPT</span><p id="ar-prompt"></p></div>
           <button class="secondary-button" id="exit-ar" type="button">Exit AR</button>
         </div>
-        <p class="ar-hint">Look around your space</p>
+        <div class="ar-controls" aria-label="AR object controls">
+          <button class="secondary-button" id="add-ar-object" type="button">Add object</button>
+          <div class="scale-controls" aria-label="Scale selected object">
+            <button class="secondary-button" id="scale-ar-object-down" type="button" aria-label="Make selected object smaller">−</button>
+            <span>SIZE</span>
+            <button class="secondary-button" id="scale-ar-object-up" type="button" aria-label="Make selected object larger">+</button>
+          </div>
+        </div>
+        <p class="ar-hint" id="ar-controls-hint">Aim at a surface and tap to place. Tap an object to select, then drag to move.</p>
       </section>
       <footer><a href="/">← Back to ARtColab</a><span>Connectivity test</span></footer>
     </main>
