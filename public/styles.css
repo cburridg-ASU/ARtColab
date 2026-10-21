@@ -492,6 +492,16 @@ h1 span {
   pointer-events: none;
 }
 
+.ar-camera {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  object-fit: cover;
+}
+
 .ar-overlay {
   position: fixed;
   inset: 0;

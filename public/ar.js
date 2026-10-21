@@ -9,8 +9,33 @@ const objectStyles = [
 
 export async function enterAR({ overlay, prompt, exitButton }) {
   const supportsAR = await navigator.xr?.isSessionSupported("immersive-ar").catch(() => false);
+  let cameraStream;
+  let cameraVideo;
   if (!supportsAR) {
-    throw new Error("AR isn't available here. Try a WebXR-compatible phone browser over HTTPS.");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Camera access requires HTTPS and a browser that supports camera video.");
+    }
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" } },
+      });
+      cameraVideo = document.createElement("video");
+      cameraVideo.className = "ar-camera";
+      cameraVideo.autoplay = true;
+      cameraVideo.muted = true;
+      cameraVideo.playsInline = true;
+      cameraVideo.srcObject = cameraStream;
+      await cameraVideo.play();
+    } catch (error) {
+      cameraStream?.getTracks().forEach((track) => track.stop());
+      console.error("Could not start the camera preview:", error);
+      throw new Error(
+        error.name === "NotAllowedError"
+          ? "Allow camera access in your browser settings, then try again."
+          : "Could not open the camera. Check camera permissions and try again.",
+      );
+    }
   }
 
   const renderer = new THREE.WebGLRenderer({
@@ -31,6 +56,8 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   const scene = new THREE.Scene();
   scene.background = null;
   const camera = new THREE.PerspectiveCamera();
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
   scene.add(new THREE.HemisphereLight(0xffffff, 0x71634b, 2));
 
   const reticle = new THREE.Mesh(
@@ -52,6 +79,7 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   let dragOffset = new THREE.Vector3();
   let hitTestSource;
   let session;
+  const usingWebXR = Boolean(supportsAR);
   let closed = false;
   let nextStyle = 0;
   const dragPlane = new THREE.Plane();
@@ -107,12 +135,51 @@ export async function enterAR({ overlay, prompt, exitButton }) {
       }
       return;
     }
-
     if (reticle.visible) {
       const pose = new THREE.Matrix4().copy(reticle.matrix);
       const position = new THREE.Vector3().setFromMatrixPosition(pose);
       const quaternion = new THREE.Quaternion().setFromRotationMatrix(pose);
       addObject(position, quaternion);
+    }
+  }
+
+  function getScreenRay(clientX, clientY) {
+    const bounds = renderer.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((clientY - bounds.top) / bounds.height) * 2 + 1,
+    );
+    camera.aspect = bounds.width / bounds.height;
+    camera.updateProjectionMatrix();
+    raycaster.setFromCamera(pointer, camera);
+    return raycaster;
+  }
+
+  function handleCameraPointerDown(event) {
+    if (event.target !== renderer.domElement) return;
+    event.preventDefault();
+    renderer.domElement.setPointerCapture(event.pointerId);
+    getScreenRay(event.clientX, event.clientY);
+    const hits = raycaster.intersectObjects(Array.from(objects), true);
+    if (hits.length) {
+      setSelection(hits[0].object.userData.arObject);
+      dragging = true;
+      camera.getWorldDirection(cameraDirection);
+      dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, selectedObject.position);
+      if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+        dragOffset.copy(selectedObject.position).sub(intersection);
+      }
+      return;
+    }
+    const position = raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, 1.4);
+    addObject(position, camera.quaternion);
+  }
+
+  function handleCameraPointerMove(event) {
+    if (!dragging || !selectedObject) return;
+    getScreenRay(event.clientX, event.clientY);
+    if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+      selectedObject.position.copy(intersection).add(dragOffset);
     }
   }
 
@@ -139,6 +206,13 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   }
 
   function addAtReticle() {
+    if (!usingWebXR) {
+      camera.getWorldDirection(cameraDirection);
+      const position = camera.position.clone().addScaledVector(cameraDirection, 1.4);
+      addObject(position, camera.quaternion);
+      controlsHint.textContent = "Camera view · tap to place, drag to move, use size buttons.";
+      return;
+    }
     if (!reticle.visible) {
       controlsHint.textContent = "Aim at a surface until the marker appears.";
       return;
@@ -156,9 +230,13 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   const handleScaleUp = () => scaleSelected(1.18);
   const handleResize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
   };
 
   overlay.querySelector("#ar-prompt").textContent = prompt;
+  overlay.classList.toggle("camera-preview", !usingWebXR);
+  if (cameraVideo) document.body.append(cameraVideo);
   overlay.classList.add("is-active");
   overlay.hidden = false;
   document.documentElement.classList.add("immersive-ar-active");
@@ -168,6 +246,14 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   scaleUpButton.addEventListener("click", handleScaleUp);
   controller.addEventListener("selectstart", selectOrPlace);
   controller.addEventListener("selectend", endDrag);
+  if (!usingWebXR) {
+    renderer.domElement.style.pointerEvents = "auto";
+    renderer.domElement.addEventListener("pointerdown", handleCameraPointerDown);
+    renderer.domElement.addEventListener("pointermove", handleCameraPointerMove);
+    renderer.domElement.addEventListener("pointerup", endDrag);
+    renderer.domElement.addEventListener("pointercancel", endDrag);
+    controlsHint.textContent = "Camera view · no surface tracking. Tap to place, drag to move.";
+  }
   window.addEventListener("resize", handleResize);
 
   const cleanup = () => {
@@ -179,14 +265,21 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     scaleUpButton.removeEventListener("click", handleScaleUp);
     controller.removeEventListener("selectstart", selectOrPlace);
     controller.removeEventListener("selectend", endDrag);
+    renderer.domElement.removeEventListener("pointerdown", handleCameraPointerDown);
+    renderer.domElement.removeEventListener("pointermove", handleCameraPointerMove);
+    renderer.domElement.removeEventListener("pointerup", endDrag);
+    renderer.domElement.removeEventListener("pointercancel", endDrag);
     window.removeEventListener("resize", handleResize);
     hitTestSource?.cancel();
     overlay.classList.remove("is-active");
+    overlay.classList.remove("camera-preview");
     overlay.hidden = true;
     document.documentElement.classList.remove("immersive-ar-active");
     renderer.setAnimationLoop(null);
     renderer.dispose();
     renderer.domElement.remove();
+    cameraVideo?.remove();
+    cameraStream?.getTracks().forEach((track) => track.stop());
     reticle.geometry.dispose();
     reticle.material.dispose();
     for (const object of objects) {
@@ -197,37 +290,45 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   };
 
   function endSession() {
-    if (session) session.end();
+    if (session) {
+      session.end();
+    } else {
+      cleanup();
+    }
   }
 
-  try {
-    session = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: ["local", "hit-test"],
-      optionalFeatures: ["dom-overlay"],
-      domOverlay: { root: overlay },
-    });
-    if (session.environmentBlendMode === "opaque") {
-      throw new Error(
-        "This browser did not provide camera passthrough. Try a phone browser that supports immersive AR.",
-      );
+  if (usingWebXR) {
+    try {
+      session = await navigator.xr.requestSession("immersive-ar", {
+        requiredFeatures: ["local", "hit-test"],
+        optionalFeatures: ["dom-overlay"],
+        domOverlay: { root: overlay },
+      });
+      if (session.environmentBlendMode === "opaque") {
+        throw new Error(
+          "This browser did not provide camera passthrough. Try a phone browser that supports immersive AR.",
+        );
+      }
+      exitButton.addEventListener("click", endSession);
+      await renderer.xr.setSession(session);
+      const viewerSpace = await session.requestReferenceSpace("viewer");
+      hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    } catch (error) {
+      if (session) await session.end();
+      cleanup();
+      console.error("Could not start an immersive AR session:", error);
+      if (error instanceof Error && error.message.includes("did not provide camera passthrough")) {
+        throw error;
+      }
+      throw new Error("Could not start AR. Check camera permissions and hit-test support, then try again.");
     }
     session.addEventListener("end", cleanup, { once: true });
+  } else {
     exitButton.addEventListener("click", endSession);
-    await renderer.xr.setSession(session);
-    const viewerSpace = await session.requestReferenceSpace("viewer");
-    hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-  } catch (error) {
-    if (session) await session.end();
-    cleanup();
-    console.error("Could not start an immersive AR session:", error);
-    if (error instanceof Error && error.message.includes("did not provide camera passthrough")) {
-      throw error;
-    }
-    throw new Error("Could not start AR. Check camera permissions and hit-test support, then try again.");
   }
 
   renderer.setAnimationLoop((_time, frame) => {
-    if (frame && hitTestSource) {
+    if (usingWebXR && frame && hitTestSource) {
       const hit = frame.getHitTestResults(hitTestSource)[0];
       if (hit) {
         const pose = hit.getPose(renderer.xr.getReferenceSpace());
@@ -239,7 +340,7 @@ export async function enterAR({ overlay, prompt, exitButton }) {
         reticle.visible = false;
       }
     }
-    updateDrag();
+    if (usingWebXR) updateDrag();
     renderer.render(scene, camera);
   });
 

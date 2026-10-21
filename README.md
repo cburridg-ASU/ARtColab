@@ -18,7 +18,7 @@ Then open [http://localhost:3000](http://localhost:3000).
 4. Select **Start session** on the host. The prompt appears on both screens; players can enter an immersive, camera-passthrough WebXR view on a compatible phone.
 5. Aim at a surface and tap to place objects. Tap an object to select it, drag to reposition it, and use the size buttons to scale it.
 
-Rooms are stored in memory and disappear when the server restarts. The AR objects are local to each player's phone; shared creation tools and synchronized AR objects are not implemented. Immersive AR and surface placement require a WebXR-compatible phone browser, hit-test support, and a secure context (HTTPS, or localhost for local testing).
+Rooms are stored in memory and disappear when the server restarts. The AR objects are local to each player's phone; shared creation tools and synchronized AR objects are not implemented. On WebXR-compatible phones, AR uses immersive camera passthrough and surface detection. Other phones can use a camera-preview fallback that supports placing, moving, and scaling objects, but it does not track real surfaces or movement through the room. Camera access requires HTTPS (or localhost for local testing) and permission in the browser.
 
 ## Run smoke tests
 

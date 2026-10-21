@@ -140,6 +140,10 @@ test("serves the AR module and Three.js runtime", async () => {
 
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
+  assert.match(arModule, /mediaDevices\?\.getUserMedia/);
+  assert.match(arModule, /className = "ar-camera"/);
+  assert.match(arModule, /Camera view · no surface tracking/);
+  assert.match(arModule, /else \{\s*cleanup\(\);\s*\}/);
   assert.match(arModule, /requiredFeatures: \["local", "hit-test"\]/);
   assert.match(arModule, /premultipliedAlpha: false/);
   assert.match(arModule, /setClearAlpha\(0\)/);
