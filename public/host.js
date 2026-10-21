@@ -2,6 +2,7 @@ const createButton = document.querySelector("#create-room");
 const codeElement = document.querySelector("#room-code");
 const countElement = document.querySelector("#player-count");
 const joinUrlElement = document.querySelector("#join-url");
+const qrImage = document.querySelector("#room-qr");
 const promptElement = document.querySelector("#prompt");
 const playerList = document.querySelector("#player-list");
 const summaryElement = document.querySelector("#player-summary");
@@ -79,9 +80,12 @@ createButton.addEventListener("click", async () => {
     roomCode = result.code;
     codeElement.textContent = roomCode;
     promptElement.textContent = result.prompt;
+    const joinUrl = new URL(`/join?code=${encodeURIComponent(roomCode)}`, window.location.origin);
     joinUrlElement.textContent = `${window.location.host}/join`;
-    joinUrlElement.href = `/join?code=${roomCode}`;
+    joinUrlElement.href = joinUrl.pathname + joinUrl.search;
     joinUrlElement.setAttribute("aria-label", `Join this room at ${window.location.host}/join`);
+    qrImage.src = `/api/rooms/${encodeURIComponent(roomCode)}/qr`;
+    qrImage.hidden = false;
     createButton.hidden = true;
     copyButton.disabled = false;
     connectToRoom();
@@ -101,4 +105,8 @@ copyButton.addEventListener("click", async () => {
   } catch {
     showError("Could not copy the code. Share it with your players instead.");
   }
+});
+
+qrImage.addEventListener("error", () => {
+  showError("Could not load the QR code. Players can still join with the room code.");
 });

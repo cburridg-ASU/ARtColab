@@ -3,6 +3,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { URL } = require("node:url");
+const QRCode = require("qrcode");
 const { WebSocket, WebSocketServer } = require("ws");
 
 const publicDirectory = path.join(__dirname, "public");
@@ -92,6 +93,62 @@ function readJsonBody(request) {
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, "http://localhost");
   const pathname = requestUrl.pathname;
+
+  const qrMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/qr$/);
+  if (qrMatch) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      response.writeHead(405, { Allow: "GET, HEAD" });
+      response.end("Method Not Allowed");
+      return;
+    }
+
+    const code = qrMatch[1].toUpperCase();
+    const room = rooms.get(code);
+    if (!room) {
+      sendJson(response, 404, { error: "Room not found. Create a new room or check the code." });
+      return;
+    }
+
+    const forwardedHost = request.headers["x-forwarded-host"];
+    const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || request.headers.host || "")
+      .split(",")[0]
+      .trim();
+    const hostIsValid = /^(?:[a-zA-Z0-9.-]+|\[[\da-fA-F:.]+\])(?::\d{1,5})?$/.test(host);
+    const forwardedProtocol = request.headers["x-forwarded-proto"];
+    const protocol = (Array.isArray(forwardedProtocol) ? forwardedProtocol[0] : forwardedProtocol || "")
+      .split(",")[0]
+      .trim()
+      .toLowerCase();
+    const scheme = protocol === "https" || (protocol !== "http" && request.socket.encrypted)
+      ? "https"
+      : "http";
+
+    if (!hostIsValid) {
+      sendJson(response, 400, { error: "Unable to determine the public room address." });
+      return;
+    }
+
+    try {
+      const joinUrl = new URL(`/join?code=${encodeURIComponent(code)}`, `${scheme}://${host}`);
+      const svg = await QRCode.toString(joinUrl.toString(), {
+        type: "svg",
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 200,
+      });
+      response.writeHead(200, {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        "Content-Length": Buffer.byteLength(svg),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      response.end(request.method === "HEAD" ? undefined : svg);
+    } catch (error) {
+      console.error("Unable to generate room QR code:", error);
+      sendJson(response, 500, { error: "Unable to generate the room QR code." });
+    }
+    return;
+  }
 
   if (pathname === "/api/rooms" || /^\/api\/rooms\/[^/]+\/players$/.test(pathname)) {
     if (request.method !== "POST") {

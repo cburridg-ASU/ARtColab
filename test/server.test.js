@@ -4,6 +4,7 @@ const { once } = require("node:events");
 const net = require("node:net");
 const path = require("node:path");
 const { after, before, test } = require("node:test");
+const QRCode = require("qrcode");
 const WebSocket = require("ws");
 
 const projectDirectory = path.join(__dirname, "..");
@@ -151,6 +152,43 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const room = await createResponse.json();
   assert.equal(createResponse.status, 201);
   assert.match(room.code, /^[A-HJ-NP-Z2-9]{6}$/);
+
+  const qrResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/qr`);
+  const qrSvg = await qrResponse.text();
+  assert.equal(qrResponse.status, 200);
+  assert.match(qrResponse.headers.get("content-type"), /^image\/svg\+xml; charset=utf-8$/);
+  assert.equal(qrResponse.headers.get("cache-control"), "no-store");
+  assert.match(qrSvg, /^<svg\b/);
+  assert.match(qrSvg, /<path\b/);
+  assert.equal(
+    qrSvg,
+    await QRCode.toString(`${baseUrl}/join?code=${room.code}`, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 200,
+    }),
+  );
+
+  const forwardedQrResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/qr`, {
+    headers: {
+      "x-forwarded-host": "games.example",
+      "x-forwarded-proto": "https",
+    },
+  });
+  const forwardedQrSvg = await forwardedQrResponse.text();
+  assert.equal(
+    forwardedQrSvg,
+    await QRCode.toString(`https://games.example/join?code=${room.code}`, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 200,
+    }),
+  );
+
+  const missingQrResponse = await fetch(`${baseUrl}/api/rooms/NOPE00/qr`);
+  assert.equal(missingQrResponse.status, 404);
 
   const invalidJoin = await fetch(`${baseUrl}/api/rooms/NOPE00/players`, {
     method: "POST",
