@@ -4,6 +4,7 @@ const { once } = require("node:events");
 const net = require("node:net");
 const path = require("node:path");
 const { after, before, test } = require("node:test");
+const WebSocket = require("ws");
 
 const projectDirectory = path.join(__dirname, "..");
 let serverProcess;
@@ -39,6 +40,29 @@ async function waitForServer() {
   }
 
   throw new Error(`Server did not become ready: ${lastError?.message}. ${serverError}`);
+}
+
+function waitForMessage(socket, predicate = () => true) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.off("message", onMessage);
+      reject(new Error("Timed out waiting for a WebSocket message."));
+    }, 3000);
+    const onMessage = (data) => {
+      const message = JSON.parse(data.toString());
+      if (!predicate(message)) return;
+      clearTimeout(timeout);
+      socket.off("message", onMessage);
+      resolve(message);
+    };
+    socket.on("message", onMessage);
+  });
+}
+
+function connectWebSocket(url) {
+  const socket = new WebSocket(url);
+  const opened = once(socket, "open");
+  return { socket, opened };
 }
 
 before(async () => {
@@ -83,6 +107,20 @@ test("serves the stylesheet", async () => {
   assert.match(css, /@media \(max-width: 600px\)/);
 });
 
+test("serves host and player screens", async () => {
+  const [hostResponse, joinResponse] = await Promise.all([
+    fetch(`${baseUrl}/host`),
+    fetch(`${baseUrl}/join`),
+  ]);
+  const hostPage = await hostResponse.text();
+  const joinPage = await joinResponse.text();
+
+  assert.equal(hostResponse.status, 200);
+  assert.match(hostPage, /id="create-room"/);
+  assert.equal(joinResponse.status, 200);
+  assert.match(joinPage, /id="room-code-input"/);
+});
+
 test("supports HEAD requests without a response body", async () => {
   const response = await fetch(baseUrl, { method: "HEAD" });
   const getResponse = await fetch(baseUrl);
@@ -106,4 +144,67 @@ test("rejects unsupported methods", async () => {
 
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET, HEAD");
+});
+
+test("creates rooms, validates joins, and broadcasts connected players", async (context) => {
+  const createResponse = await fetch(`${baseUrl}/api/rooms`, { method: "POST" });
+  const room = await createResponse.json();
+  assert.equal(createResponse.status, 201);
+  assert.match(room.code, /^[A-HJ-NP-Z2-9]{6}$/);
+
+  const invalidJoin = await fetch(`${baseUrl}/api/rooms/NOPE00/players`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Tester" }),
+  });
+  assert.equal(invalidJoin.status, 404);
+
+  const { socket: hostSocket, opened: hostOpened } = connectWebSocket(
+    `${baseUrl.replace("http:", "ws:")}/ws?role=host&code=${room.code}`,
+  );
+  context.after(() => hostSocket.close());
+  const hostSnapshotPromise = waitForMessage(hostSocket, (message) => message.type === "room");
+  await hostOpened;
+  const hostSnapshot = await hostSnapshotPromise;
+  assert.equal(hostSnapshot.code, room.code);
+  assert.deepEqual(hostSnapshot.players, []);
+
+  const joinResponsePromise = fetch(`${baseUrl}/api/rooms/${room.code}/players`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "  Alex  " }),
+  });
+  const waitingRoomUpdate = waitForMessage(
+    hostSocket,
+    (message) => message.type === "room" && message.players.length === 1,
+  );
+  const joinResponse = await joinResponsePromise;
+  const player = await joinResponse.json();
+  assert.equal(joinResponse.status, 201);
+  assert.equal(player.name, "Alex");
+  const waitingRoom = await waitingRoomUpdate;
+  assert.equal(waitingRoom.players[0].connected, false);
+
+  const { socket: playerSocket, opened: playerOpened } = connectWebSocket(
+    `${baseUrl.replace("http:", "ws:")}/ws?role=player&code=${room.code}&playerId=${player.playerId}`,
+  );
+  context.after(() => playerSocket.close());
+  const playerSnapshotPromise = waitForMessage(playerSocket, (message) => message.type === "room");
+  const connectedRoomPromise = waitForMessage(
+    hostSocket,
+    (message) => message.type === "room" && message.players[0]?.connected === true,
+  );
+  await playerOpened;
+  const playerSnapshot = await playerSnapshotPromise;
+  const connectedRoom = await connectedRoomPromise;
+  assert.equal(playerSnapshot.players[0].name, "Alex");
+  assert.equal(connectedRoom.players[0].connected, true);
+
+  const disconnectedRoomPromise = waitForMessage(
+    hostSocket,
+    (message) => message.type === "room" && message.players[0]?.connected === false,
+  );
+  playerSocket.close();
+  const disconnectedRoom = await disconnectedRoomPromise;
+  assert.equal(disconnectedRoom.players[0].name, "Alex");
 });

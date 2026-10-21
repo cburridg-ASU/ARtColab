@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f2e9">
+    <title>Host a game — ARtColab</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="game-page">
+      <nav class="navigation" aria-label="Main navigation">
+        <a class="wordmark" href="/">ARt<span>Colab</span></a>
+        <span class="connection-status" id="connection-status">NOT CONNECTED</span>
+      </nav>
+      <section class="game-content" aria-labelledby="host-title">
+        <div class="game-heading">
+          <p class="eyebrow">HOST SCREEN</p>
+          <h1 class="game-title" id="host-title">Get your<br><span>friends in.</span></h1>
+        </div>
+        <div class="room-panel">
+          <div class="room-panel-top"><span>ROOM CODE</span><span id="player-count">0 PLAYERS</span></div>
+          <div class="room-code" id="room-code">------</div>
+          <p class="join-instruction">On your phone, go to <a id="join-url" href="/join">/join</a></p>
+          <button class="secondary-button copy-button" id="copy-code" type="button" disabled>Copy room code</button>
+          <p class="error-message" id="host-error" role="alert" hidden></p>
+        </div>
+        <div class="prompt-panel">
+          <p class="eyebrow">ROUND PROMPT</p>
+          <p class="prompt-text" id="prompt">Start a room to see your prompt.</p>
+        </div>
+        <section class="players-panel" aria-labelledby="players-title">
+          <div class="players-heading"><h2 id="players-title">Players</h2><span id="player-summary">Waiting for friends</span></div>
+          <ul class="player-list" id="player-list"><li class="empty-state">Your friends will show up here.</li></ul>
+        </section>
+        <button class="primary-button" id="create-room" type="button">Create a room <span aria-hidden="true">→</span></button>
+      </section>
+      <footer><a href="/">← Back to ARtColab</a><span>Connectivity test</span></footer>
+    </main>
+    <script src="/host.js" defer></script>
+  </body>
+</html>

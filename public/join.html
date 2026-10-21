@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f2e9">
+    <title>Join a game — ARtColab</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="game-page join-page">
+      <nav class="navigation" aria-label="Main navigation">
+        <a class="wordmark" href="/">ARt<span>Colab</span></a>
+        <span class="header-note">PLAYER SCREEN</span>
+      </nav>
+      <section class="join-content" aria-labelledby="join-title">
+        <p class="eyebrow">PULL UP A PHONE</p>
+        <h1 class="game-title" id="join-title">Join the<br><span>fun.</span></h1>
+        <form class="join-form" id="join-form">
+          <label for="room-code-input">Room code</label>
+          <input id="room-code-input" name="code" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="ABC123" required>
+          <label for="player-name">Your name</label>
+          <input id="player-name" name="name" type="text" autocomplete="nickname" maxlength="20" placeholder="What should we call you?" required>
+          <button class="primary-button" type="submit">Join game <span aria-hidden="true">→</span></button>
+          <p class="error-message" id="join-error" role="alert" hidden></p>
+        </form>
+        <div class="joined-panel" id="joined-panel" hidden>
+          <p class="eyebrow">YOU’RE IN</p>
+          <p class="joined-name" id="joined-name"></p>
+          <p class="joined-message">Look up at the big screen. You’re waiting with the group.</p>
+          <span class="connection-status" id="player-connection">CONNECTING</span>
+        </div>
+      </section>
+      <footer><a href="/">← Back to ARtColab</a><span>Connectivity test</span></footer>
+    </main>
+    <script src="/join.js" defer></script>
+  </body>
+</html>
