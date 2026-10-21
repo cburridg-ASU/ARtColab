@@ -24,15 +24,29 @@
           <button class="primary-button" type="submit">Join game <span aria-hidden="true">→</span></button>
           <p class="error-message" id="join-error" role="alert" hidden></p>
         </form>
-        <div class="joined-panel" id="joined-panel" hidden>
+        <div class="joined-panel" id="joined-panel">
           <p class="eyebrow">YOU’RE IN</p>
           <p class="joined-name" id="joined-name"></p>
           <p class="joined-message">Look up at the big screen. You’re waiting with the group.</p>
           <span class="connection-status" id="player-connection">CONNECTING</span>
         </div>
+        <section class="mobile-game-panel" id="mobile-game-panel" aria-labelledby="mobile-prompt" hidden>
+          <p class="eyebrow">YOUR PROMPT</p>
+          <h2 class="mobile-prompt" id="mobile-prompt"></h2>
+          <p class="joined-message">Look around and find a place to start creating.</p>
+          <button class="primary-button" id="enter-ar" type="button">Enter AR mode <span aria-hidden="true">→</span></button>
+          <p class="error-message" id="ar-error" role="alert" hidden></p>
+        </section>
+      </section>
+      <section class="ar-overlay" id="ar-overlay" aria-label="AR creation space" hidden>
+        <div class="ar-hud">
+          <div class="ar-hud-prompt"><span class="eyebrow">YOUR PROMPT</span><p id="ar-prompt"></p></div>
+          <button class="secondary-button" id="exit-ar" type="button">Exit AR</button>
+        </div>
+        <p class="ar-hint">Look around your space</p>
       </section>
       <footer><a href="/">← Back to ARtColab</a><span>Connectivity test</span></footer>
     </main>
-    <script src="/join.js" defer></script>
+    <script type="module" src="/join.js"></script>
   </body>
 </html>

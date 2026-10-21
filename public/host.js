@@ -4,11 +4,14 @@ const countElement = document.querySelector("#player-count");
 const joinUrlElement = document.querySelector("#join-url");
 const qrImage = document.querySelector("#room-qr");
 const promptElement = document.querySelector("#prompt");
+const promptPanel = document.querySelector("#prompt-panel");
 const playerList = document.querySelector("#player-list");
 const summaryElement = document.querySelector("#player-summary");
 const statusElement = document.querySelector("#connection-status");
 const errorElement = document.querySelector("#host-error");
 const copyButton = document.querySelector("#copy-code");
+const startButton = document.querySelector("#start-session");
+const sessionErrorElement = document.querySelector("#session-error");
 
 let roomCode;
 
@@ -25,6 +28,9 @@ function showError(message) {
 function renderRoom(room) {
   codeElement.textContent = room.code;
   promptElement.textContent = room.prompt;
+  promptPanel.hidden = room.phase !== "active";
+  startButton.hidden = room.phase === "active";
+  startButton.disabled = false;
   const connectedPlayers = room.players.filter((player) => player.connected);
   countElement.textContent = `${connectedPlayers.length} ${connectedPlayers.length === 1 ? "PLAYER" : "PLAYERS"}`;
   summaryElement.textContent = room.players.length
@@ -88,10 +94,30 @@ createButton.addEventListener("click", async () => {
     qrImage.hidden = false;
     createButton.hidden = true;
     copyButton.disabled = false;
+    startButton.hidden = false;
     connectToRoom();
   } catch (error) {
     showError(error.message);
     createButton.disabled = false;
+  }
+});
+
+startButton.addEventListener("click", async () => {
+  startButton.disabled = true;
+  sessionErrorElement.hidden = true;
+  try {
+    const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/start`, {
+      method: "POST",
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not start the session.");
+    promptElement.textContent = result.prompt;
+    promptPanel.hidden = false;
+    startButton.hidden = true;
+  } catch (error) {
+    sessionErrorElement.textContent = error.message;
+    sessionErrorElement.hidden = false;
+    startButton.disabled = false;
   }
 });
 

@@ -26,7 +26,7 @@
           <button class="secondary-button copy-button" id="copy-code" type="button" disabled>Copy room code</button>
           <p class="error-message" id="host-error" role="alert" hidden></p>
         </div>
-        <div class="prompt-panel">
+        <div class="prompt-panel" id="prompt-panel" hidden>
           <p class="eyebrow">ROUND PROMPT</p>
           <p class="prompt-text" id="prompt">Start a room to see your prompt.</p>
         </div>
@@ -35,6 +35,8 @@
           <ul class="player-list" id="player-list"><li class="empty-state">Your friends will show up here.</li></ul>
         </section>
         <button class="primary-button" id="create-room" type="button">Create a room <span aria-hidden="true">→</span></button>
+        <button class="primary-button" id="start-session" type="button" hidden>Start session <span aria-hidden="true">→</span></button>
+        <p class="error-message" id="session-error" role="alert" hidden></p>
       </section>
       <footer><a href="/">← Back to ARtColab</a><span>Connectivity test</span></footer>
     </main>

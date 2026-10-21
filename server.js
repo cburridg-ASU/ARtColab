@@ -10,6 +10,10 @@ const publicDirectory = path.join(__dirname, "public");
 const roomCodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomLifetime = 2 * 60 * 60 * 1000;
 const maxRequestBytes = 4096;
+const vendorFiles = {
+  "/vendor/three.core.js": path.join(__dirname, "node_modules", "three", "build", "three.core.js"),
+  "/vendor/three.module.js": path.join(__dirname, "node_modules", "three", "build", "three.module.js"),
+};
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -46,6 +50,7 @@ function getRoomSnapshot(room) {
     type: "room",
     code: room.code,
     prompt: room.prompt,
+    phase: room.phase,
     players: Array.from(room.players.values(), ({ id, name, connected }) => ({
       id,
       name,
@@ -164,6 +169,7 @@ const server = http.createServer(async (request, response) => {
         const room = {
           code,
           prompt: "Build something unexpected.",
+          phase: "lobby",
           players: new Map(),
           clients: new Set(),
           createdAt: Date.now(),
@@ -202,6 +208,29 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
+  const startRoomMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/start$/);
+  if (startRoomMatch) {
+    if (request.method !== "POST") {
+      response.writeHead(405, { Allow: "POST" });
+      response.end("Method Not Allowed");
+      return;
+    }
+
+    const code = startRoomMatch[1].toUpperCase();
+    const room = rooms.get(code);
+    if (!room) {
+      sendJson(response, 404, { error: "Room not found. Create a new room or check the code." });
+      return;
+    }
+
+    if (room.phase !== "active") {
+      room.phase = "active";
+      broadcastRoom(room);
+    }
+    sendJson(response, 200, { code, phase: room.phase, prompt: room.prompt });
+    return;
+  }
+
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405, { Allow: "GET, HEAD" });
     response.end("Method Not Allowed");
@@ -217,9 +246,13 @@ const server = http.createServer(async (request, response) => {
     response.end("Bad Request");
     return;
   }
-  const requestedPath = pageAliases[pathnameFromUrl] || pathnameFromUrl.replace(/^[/\\]+/, "");
-  const filePath = path.resolve(publicDirectory, requestedPath);
-  if (!filePath.startsWith(`${publicDirectory}${path.sep}`)) {
+  const filePath = vendorFiles[pathnameFromUrl]
+    ? vendorFiles[pathnameFromUrl]
+    : path.resolve(publicDirectory, pageAliases[pathnameFromUrl] || pathnameFromUrl.replace(/^[/\\]+/, ""));
+  if (
+    !vendorFiles[pathnameFromUrl] &&
+    !filePath.startsWith(`${publicDirectory}${path.sep}`)
+  ) {
     response.writeHead(404);
     response.end("Not Found");
     return;

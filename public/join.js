@@ -1,3 +1,5 @@
+import { enterAR } from "/ar.js";
+
 const joinForm = document.querySelector("#join-form");
 const codeInput = document.querySelector("#room-code-input");
 const nameInput = document.querySelector("#player-name");
@@ -5,6 +7,13 @@ const errorElement = document.querySelector("#join-error");
 const joinedPanel = document.querySelector("#joined-panel");
 const joinedName = document.querySelector("#joined-name");
 const connectionElement = document.querySelector("#player-connection");
+const gamePanel = document.querySelector("#mobile-game-panel");
+const mobilePrompt = document.querySelector("#mobile-prompt");
+const enterArButton = document.querySelector("#enter-ar");
+const arError = document.querySelector("#ar-error");
+const arOverlay = document.querySelector("#ar-overlay");
+const arPrompt = document.querySelector("#ar-prompt");
+const exitArButton = document.querySelector("#exit-ar");
 
 let playerId;
 let roomCode;
@@ -38,6 +47,7 @@ function connectToRoom() {
         errorElement.textContent = "You are no longer in this room. Join again from the host screen.";
         errorElement.hidden = false;
       }
+      if (message.phase === "active") showActivePrompt(message.prompt);
     }
   });
   socket.addEventListener("close", () => {
@@ -50,6 +60,30 @@ function connectToRoom() {
     connectionElement.classList.remove("is-connected");
   });
 }
+
+function showActivePrompt(prompt) {
+  mobilePrompt.textContent = prompt;
+  arPrompt.textContent = prompt;
+  joinedPanel.hidden = true;
+  gamePanel.hidden = false;
+}
+
+enterArButton.addEventListener("click", async () => {
+  enterArButton.disabled = true;
+  arError.hidden = true;
+  try {
+    await enterAR({
+      overlay: arOverlay,
+      prompt: arPrompt.textContent,
+      exitButton: exitArButton,
+    });
+  } catch (error) {
+    arError.textContent = error.message;
+    arError.hidden = false;
+  } finally {
+    enterArButton.disabled = false;
+  }
+});
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();

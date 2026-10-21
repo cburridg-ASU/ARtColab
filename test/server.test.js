@@ -118,8 +118,29 @@ test("serves host and player screens", async () => {
 
   assert.equal(hostResponse.status, 200);
   assert.match(hostPage, /id="create-room"/);
+  assert.match(hostPage, /id="start-session"/);
   assert.equal(joinResponse.status, 200);
   assert.match(joinPage, /id="room-code-input"/);
+  assert.match(joinPage, /id="mobile-game-panel"/);
+  assert.match(joinPage, /type="module" src="\/join\.js"/);
+});
+
+test("serves the AR module and Three.js runtime", async () => {
+  const [arResponse, threeResponse, threeCoreResponse] = await Promise.all([
+    fetch(`${baseUrl}/ar.js`),
+    fetch(`${baseUrl}/vendor/three.module.js`),
+    fetch(`${baseUrl}/vendor/three.core.js`),
+  ]);
+  const arModule = await arResponse.text();
+  const threeModule = await threeResponse.text();
+  const threeCoreModule = await threeCoreResponse.text();
+
+  assert.equal(arResponse.status, 200);
+  assert.match(arModule, /requestSession\("immersive-ar"/);
+  assert.equal(threeResponse.status, 200);
+  assert.match(threeModule, /WebGLRenderer/);
+  assert.equal(threeCoreResponse.status, 200);
+  assert.match(threeCoreModule, /REVISION/);
 });
 
 test("supports HEAD requests without a response body", async () => {
@@ -205,6 +226,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   await hostOpened;
   const hostSnapshot = await hostSnapshotPromise;
   assert.equal(hostSnapshot.code, room.code);
+  assert.equal(hostSnapshot.phase, "lobby");
   assert.deepEqual(hostSnapshot.players, []);
 
   const joinResponsePromise = fetch(`${baseUrl}/api/rooms/${room.code}/players`, {
@@ -237,6 +259,29 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const connectedRoom = await connectedRoomPromise;
   assert.equal(playerSnapshot.players[0].name, "Alex");
   assert.equal(connectedRoom.players[0].connected, true);
+
+  const activeRoomPromise = waitForMessage(
+    hostSocket,
+    (message) => message.type === "room" && message.phase === "active",
+  );
+  const activePlayerRoomPromise = waitForMessage(
+    playerSocket,
+    (message) => message.type === "room" && message.phase === "active",
+  );
+  const startResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
+    method: "POST",
+  });
+  const started = await startResponse.json();
+  const activeRoom = await activeRoomPromise;
+  assert.equal(startResponse.status, 200);
+  assert.equal(started.phase, "active");
+  assert.equal(started.prompt, room.prompt);
+  assert.equal(activeRoom.prompt, room.prompt);
+  assert.equal((await activePlayerRoomPromise).phase, "active");
+  const repeatedStart = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
+    method: "POST",
+  });
+  assert.equal(repeatedStart.status, 200);
 
   const disconnectedRoomPromise = waitForMessage(
     hostSocket,

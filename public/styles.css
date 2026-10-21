@@ -360,6 +360,10 @@ h1 span {
   margin-top: 20px;
 }
 
+.game-content > .primary-button[hidden] {
+  display: none;
+}
+
 .error-message {
   margin: 12px 0 0;
   color: #b33c30;
@@ -454,6 +458,97 @@ h1 span {
   color: #f05d43;
 }
 
+.mobile-game-panel {
+  margin-top: 26px;
+  padding: 21px;
+  border: 1px solid #e3dfd5;
+  border-radius: 10px;
+  background: #fffdf8;
+}
+
+.mobile-prompt {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.65rem;
+  letter-spacing: -0.04em;
+  line-height: 1.12;
+}
+
+.mobile-game-panel .joined-message {
+  margin: 9px 0 17px;
+}
+
+.ar-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  color: #25241f;
+  pointer-events: none;
+}
+
+.ar-overlay.is-active {
+  display: block;
+}
+
+.ar-hud {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(18px, env(safe-area-inset-top)) 18px 0;
+  pointer-events: none;
+}
+
+.ar-hud-prompt {
+  max-width: min(70vw, 360px);
+  padding: 12px 15px;
+  border: 1px solid #ffffff80;
+  border-radius: 10px;
+  background: #fffdf2e8;
+  box-shadow: 0 5px 25px #0002;
+}
+
+.ar-hud-prompt .eyebrow {
+  margin-bottom: 5px;
+}
+
+.ar-hud-prompt p:last-child {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ar-hud .secondary-button {
+  margin: 0;
+  background: #fffdf2e8;
+  pointer-events: auto;
+}
+
+.ar-hint {
+  position: absolute;
+  right: 0;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  left: 0;
+  width: max-content;
+  max-width: 90%;
+  margin: auto;
+  padding: 10px 15px;
+  border-radius: 999px;
+  background: #25241fcc;
+  color: white;
+  font-size: 0.8rem;
+}
+
 footer {
   min-height: 68px;
   border-top: 1px solid #e3dfd5;
@@ -493,7 +588,8 @@ footer {
 
   .room-panel,
   .prompt-panel,
-  .players-panel {
+  .players-panel,
+  .mobile-game-panel {
     padding: 17px;
   }
 
