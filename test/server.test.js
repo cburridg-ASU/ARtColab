@@ -141,6 +141,10 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
   assert.match(arModule, /requiredFeatures: \["local", "hit-test"\]/);
+  assert.match(arModule, /premultipliedAlpha: false/);
+  assert.match(arModule, /setClearAlpha\(0\)/);
+  assert.match(arModule, /session\.environmentBlendMode === "opaque"/);
+  assert.match(arModule, /immersive-ar-active/);
   assert.match(arModule, /getHitTestResults/);
   assert.match(arModule, /selectstart/);
   assert.match(arModule, /scaleSelected/);

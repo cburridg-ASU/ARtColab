@@ -13,16 +13,23 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     throw new Error("AR isn't available here. Try a WebXR-compatible phone browser over HTTPS.");
   }
 
-  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  const renderer = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    premultipliedAlpha: false,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
+  renderer.setClearAlpha(0);
+  renderer.autoClear = true;
   renderer.xr.enabled = true;
   renderer.xr.setReferenceSpaceType("local");
   renderer.domElement.className = "ar-canvas";
   renderer.domElement.setAttribute("aria-hidden", "true");
 
   const scene = new THREE.Scene();
+  scene.background = null;
   const camera = new THREE.PerspectiveCamera();
   scene.add(new THREE.HemisphereLight(0xffffff, 0x71634b, 2));
 
@@ -154,6 +161,7 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   overlay.querySelector("#ar-prompt").textContent = prompt;
   overlay.classList.add("is-active");
   overlay.hidden = false;
+  document.documentElement.classList.add("immersive-ar-active");
   document.body.append(renderer.domElement);
   addButton.addEventListener("click", handleAdd);
   scaleDownButton.addEventListener("click", handleScaleDown);
@@ -175,6 +183,7 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     hitTestSource?.cancel();
     overlay.classList.remove("is-active");
     overlay.hidden = true;
+    document.documentElement.classList.remove("immersive-ar-active");
     renderer.setAnimationLoop(null);
     renderer.dispose();
     renderer.domElement.remove();
@@ -197,6 +206,11 @@ export async function enterAR({ overlay, prompt, exitButton }) {
       optionalFeatures: ["dom-overlay"],
       domOverlay: { root: overlay },
     });
+    if (session.environmentBlendMode === "opaque") {
+      throw new Error(
+        "This browser did not provide camera passthrough. Try a phone browser that supports immersive AR.",
+      );
+    }
     session.addEventListener("end", cleanup, { once: true });
     exitButton.addEventListener("click", endSession);
     await renderer.xr.setSession(session);
@@ -206,6 +220,9 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     if (session) await session.end();
     cleanup();
     console.error("Could not start an immersive AR session:", error);
+    if (error instanceof Error && error.message.includes("did not provide camera passthrough")) {
+      throw error;
+    }
     throw new Error("Could not start AR. Check camera permissions and hit-test support, then try again.");
   }
 

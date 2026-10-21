@@ -21,6 +21,11 @@ body {
   margin: 0;
 }
 
+.immersive-ar-active,
+.immersive-ar-active body {
+  background: transparent !important;
+}
+
 main {
   width: min(1240px, 100%);
   min-height: 100vh;
