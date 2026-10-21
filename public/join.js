@@ -10,6 +10,7 @@ const connectionElement = document.querySelector("#player-connection");
 const gamePanel = document.querySelector("#mobile-game-panel");
 const mobilePrompt = document.querySelector("#mobile-prompt");
 const enterArButton = document.querySelector("#enter-ar");
+const cameraPreviewButton = document.querySelector("#camera-preview");
 const arError = document.querySelector("#ar-error");
 const arOverlay = document.querySelector("#ar-overlay");
 const arPrompt = document.querySelector("#ar-prompt");
@@ -68,22 +69,31 @@ function showActivePrompt(prompt) {
   gamePanel.hidden = false;
 }
 
-enterArButton.addEventListener("click", async () => {
+async function startAR(mode) {
   enterArButton.disabled = true;
+  cameraPreviewButton.disabled = true;
   arError.hidden = true;
   try {
     await enterAR({
       overlay: arOverlay,
       prompt: arPrompt.textContent,
       exitButton: exitArButton,
+      mode,
     });
+    arError.hidden = true;
+    cameraPreviewButton.hidden = true;
   } catch (error) {
     arError.textContent = error.message;
     arError.hidden = false;
+    cameraPreviewButton.hidden = false;
   } finally {
     enterArButton.disabled = false;
+    cameraPreviewButton.disabled = false;
   }
-});
+}
+
+enterArButton.addEventListener("click", () => startAR("immersive"));
+cameraPreviewButton.addEventListener("click", () => startAR("camera"));
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();

@@ -122,6 +122,7 @@ test("serves host and player screens", async () => {
   assert.equal(joinResponse.status, 200);
   assert.match(joinPage, /id="room-code-input"/);
   assert.match(joinPage, /id="mobile-game-panel"/);
+  assert.match(joinPage, /id="camera-preview"/);
   assert.match(joinPage, /id="add-ar-object"/);
   assert.match(joinPage, /id="scale-ar-object-down"/);
   assert.match(joinPage, /id="scale-ar-object-up"/);
@@ -141,10 +142,18 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
   assert.match(arModule, /mediaDevices\?\.getUserMedia/);
+  assert.doesNotMatch(arModule, /await navigator\.xr\?\.isSessionSupported/);
+  assert.ok(
+    arModule.indexOf('navigator.xr.requestSession("immersive-ar"') <
+      arModule.indexOf("new THREE.WebGLRenderer"),
+    "the XR session request must happen directly from the user gesture",
+  );
   assert.match(arModule, /className = "ar-camera"/);
   assert.match(arModule, /Camera view · no surface tracking/);
   assert.match(arModule, /else \{\s*cleanup\(\);\s*\}/);
-  assert.match(arModule, /requiredFeatures: \["local", "hit-test"\]/);
+  assert.match(arModule, /optionalFeatures: \["hit-test", "dom-overlay"\]/);
+  assert.match(arModule, /using tracked viewer placement/);
+  assert.match(arModule, /frame\.getViewerPose\(renderer\.xr\.getReferenceSpace\(\)\)/);
   assert.match(arModule, /premultipliedAlpha: false/);
   assert.match(arModule, /setClearAlpha\(0\)/);
   assert.match(arModule, /session\.environmentBlendMode === "opaque"/);

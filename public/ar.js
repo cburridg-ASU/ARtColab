@@ -7,19 +7,42 @@ const objectStyles = [
   { color: 0x9c83ab, geometry: () => new THREE.ConeGeometry(0.12, 0.24, 7) },
 ];
 
-export async function enterAR({ overlay, prompt, exitButton }) {
-  const supportsAR = await navigator.xr?.isSessionSupported("immersive-ar").catch(() => false);
+export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" }) {
+  const usingWebXR = mode === "immersive";
+  let sessionRequest;
+  let cameraRequest;
   let cameraStream;
   let cameraVideo;
-  if (!supportsAR) {
+  if (usingWebXR) {
+    if (!navigator.xr) {
+      throw new Error("This browser does not support immersive AR. You can try the camera preview instead.");
+    }
+    try {
+      sessionRequest = navigator.xr.requestSession("immersive-ar", {
+        optionalFeatures: ["hit-test", "dom-overlay"],
+        domOverlay: { root: overlay },
+      });
+    } catch (error) {
+      console.error("Could not request an immersive AR session:", error);
+      throw new Error("Could not start immersive AR. Check browser support and camera permissions.");
+    }
+  } else {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Camera access requires HTTPS and a browser that supports camera video.");
     }
     try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({
+      cameraRequest = navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { facingMode: { ideal: "environment" } },
       });
+    } catch (error) {
+      throwCameraError(error);
+    }
+  }
+
+  if (cameraRequest) {
+    try {
+      cameraStream = await cameraRequest;
       cameraVideo = document.createElement("video");
       cameraVideo.className = "ar-camera";
       cameraVideo.autoplay = true;
@@ -30,11 +53,7 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     } catch (error) {
       cameraStream?.getTracks().forEach((track) => track.stop());
       console.error("Could not start the camera preview:", error);
-      throw new Error(
-        error.name === "NotAllowedError"
-          ? "Allow camera access in your browser settings, then try again."
-          : "Could not open the camera. Check camera permissions and try again.",
-      );
+      throwCameraError(error);
     }
   }
 
@@ -64,7 +83,6 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     new THREE.RingGeometry(0.075, 0.095, 32),
     new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
   );
-  reticle.rotation.x = -Math.PI / 2;
   reticle.matrixAutoUpdate = false;
   reticle.visible = false;
   scene.add(reticle);
@@ -79,7 +97,6 @@ export async function enterAR({ overlay, prompt, exitButton }) {
   let dragOffset = new THREE.Vector3();
   let hitTestSource;
   let session;
-  const usingWebXR = Boolean(supportsAR);
   let closed = false;
   let nextStyle = 0;
   const dragPlane = new THREE.Plane();
@@ -96,7 +113,9 @@ export async function enterAR({ overlay, prompt, exitButton }) {
     });
     controlsHint.textContent = selectedObject
       ? "Selected. Drag to move, or use the size buttons."
-      : "Aim at a surface and tap to place. Tap an object to select and drag.";
+      : hitTestSource
+        ? "Aim at a surface and tap to place. Tap an object to select and drag."
+        : "Tap to place in front of you. Tap an object to select and drag.";
   }
 
   function addObject(position, quaternion) {
@@ -299,11 +318,7 @@ export async function enterAR({ overlay, prompt, exitButton }) {
 
   if (usingWebXR) {
     try {
-      session = await navigator.xr.requestSession("immersive-ar", {
-        requiredFeatures: ["local", "hit-test"],
-        optionalFeatures: ["dom-overlay"],
-        domOverlay: { root: overlay },
-      });
+      session = await sessionRequest;
       if (session.environmentBlendMode === "opaque") {
         throw new Error(
           "This browser did not provide camera passthrough. Try a phone browser that supports immersive AR.",
@@ -312,13 +327,23 @@ export async function enterAR({ overlay, prompt, exitButton }) {
       exitButton.addEventListener("click", endSession);
       await renderer.xr.setSession(session);
       const viewerSpace = await session.requestReferenceSpace("viewer");
-      hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+      try {
+        hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+      } catch (error) {
+        console.warn("Surface hit testing is unavailable; using tracked viewer placement:", error);
+        controlsHint.textContent = "Surface tracking unavailable. Objects will stay in session space.";
+      }
     } catch (error) {
       if (session) await session.end();
       cleanup();
       console.error("Could not start an immersive AR session:", error);
       if (error instanceof Error && error.message.includes("did not provide camera passthrough")) {
         throw error;
+      }
+      if (error.name === "NotSupportedError") {
+        throw new Error(
+          "This browser or XR runtime could not start immersive AR. Check its AR support and permissions, or use the untracked camera preview.",
+        );
       }
       throw new Error("Could not start AR. Check camera permissions and hit-test support, then try again.");
     }
@@ -339,10 +364,30 @@ export async function enterAR({ overlay, prompt, exitButton }) {
       } else {
         reticle.visible = false;
       }
+    } else if (usingWebXR && frame) {
+      const viewerPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+      if (viewerPose) {
+        const viewerMatrix = new THREE.Matrix4().fromArray(viewerPose.transform.matrix);
+        const position = new THREE.Vector3().setFromMatrixPosition(viewerMatrix);
+        const quaternion = new THREE.Quaternion().setFromRotationMatrix(viewerMatrix);
+        position.add(new THREE.Vector3(0, 0, -1.4).applyQuaternion(quaternion));
+        reticle.matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1));
+        reticle.visible = true;
+      } else {
+        reticle.visible = false;
+      }
     }
     if (usingWebXR) updateDrag();
     renderer.render(scene, camera);
   });
 
   return session;
+}
+
+function throwCameraError(error) {
+  console.error("Could not start the camera preview:", error);
+  if (error.name === "NotAllowedError") {
+    throw new Error("Allow camera access in your browser settings, then try again.");
+  }
+  throw new Error("Could not open the camera. Check camera permissions and try again.");
 }
