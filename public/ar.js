@@ -1,48 +1,43 @@
 import * as THREE from "/vendor/three.module.js";
+import { GLTFLoader } from "/vendor/three-examples/loaders/GLTFLoader.js";
 
-const objectStyles = [
-  { color: 0xf05d43, geometry: () => new THREE.IcosahedronGeometry(0.13, 0) },
-  { color: 0xf2c84b, geometry: () => new THREE.TorusGeometry(0.15, 0.045, 10, 28) },
-  { color: 0x6b91a3, geometry: () => new THREE.SphereGeometry(0.12, 20, 16) },
-  { color: 0x9c83ab, geometry: () => new THREE.ConeGeometry(0.12, 0.24, 7) },
+const models = [
+  { name: "Chair", file: "dylan_armchair_yolk_yellow.glb", scale: 0.01 },
+  { name: "Lounger", file: "ivan_armchair_mineral_blue.glb", scale: 0.01 },
+  { name: "Marble table", file: "marble_coffee_table.glb", scale: 0.005 },
+  { name: "Walnut table", file: "flippa_functional_coffee_table_w._storagewalnut.glb", scale: 0.01 },
+  { name: "Velvet chair", file: "frame_armchairpetrol_velvet_with_gold_frame.glb", scale: 0.01 },
+  { name: "Nesting tables", file: "elnaz_nesting_side_tables_brass__green_marble.glb", scale: 0.01 },
 ];
 
 export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" }) {
   const usingWebXR = mode === "immersive";
   let sessionRequest;
-  let cameraRequest;
   let cameraStream;
   let cameraVideo;
+
   if (usingWebXR) {
     if (!navigator.xr) {
-      throw new Error("This browser does not support immersive AR. You can try the camera preview instead.");
+      throw new Error("This viewer does not expose WebXR immersive AR. It may display XR web apps without providing camera passthrough. Try an AR-compatible browser, or use camera preview without room tracking.");
     }
     try {
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
-        optionalFeatures: ["hit-test", "dom-overlay"],
+        optionalFeatures: ["hit-test", "dom-overlay", "light-estimation"],
         domOverlay: { root: overlay },
       });
     } catch (error) {
       console.error("Could not request an immersive AR session:", error);
-      throw new Error("Could not start immersive AR. Check browser support and camera permissions.");
+      throw new Error("This viewer did not start immersive AR. It may not provide camera passthrough to web apps. Try an AR-compatible browser, or use camera preview without room tracking.");
     }
   } else {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Camera access requires HTTPS and a browser that supports camera video.");
     }
     try {
-      cameraRequest = navigator.mediaDevices.getUserMedia({
+      cameraStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { facingMode: { ideal: "environment" } },
       });
-    } catch (error) {
-      throwCameraError(error);
-    }
-  }
-
-  if (cameraRequest) {
-    try {
-      cameraStream = await cameraRequest;
       cameraVideo = document.createElement("video");
       cameraVideo.className = "ar-camera";
       cameraVideo.autoplay = true;
@@ -52,7 +47,6 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
       await cameraVideo.play();
     } catch (error) {
       cameraStream?.getTracks().forEach((track) => track.stop());
-      console.error("Could not start the camera preview:", error);
       throwCameraError(error);
     }
   }
@@ -66,21 +60,23 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0);
   renderer.setClearAlpha(0);
-  renderer.autoClear = true;
-  renderer.xr.enabled = true;
+  renderer.xr.enabled = usingWebXR;
   renderer.xr.setReferenceSpaceType("local");
   renderer.domElement.className = "ar-canvas";
   renderer.domElement.setAttribute("aria-hidden", "true");
 
   const scene = new THREE.Scene();
   scene.background = null;
-  const camera = new THREE.PerspectiveCamera();
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x71634b, 2));
+  const camera = new THREE.PerspectiveCamera(
+    70,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    20,
+  );
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
 
   const reticle = new THREE.Mesh(
-    new THREE.RingGeometry(0.075, 0.095, 32),
+    new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
   );
   reticle.matrixAutoUpdate = false;
@@ -88,85 +84,131 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   scene.add(reticle);
 
   const controller = renderer.xr.getController(0);
-  const raycaster = new THREE.Raycaster();
   scene.add(controller);
 
-  const objects = new Set();
-  let selectedObject;
-  let dragging = false;
-  let dragOffset = new THREE.Vector3();
-  let hitTestSource;
-  let session;
-  let closed = false;
-  let nextStyle = 0;
+  const loader = new GLTFLoader();
+  const loadedModels = new Map();
+  const placedObjects = new Set();
+  const catalogButtons = Array.from(overlay.querySelectorAll("[data-model-index]"));
+  const addButton = overlay.querySelector("#add-ar-object");
+  const scaleDownButton = overlay.querySelector("#scale-ar-object-down");
+  const scaleUpButton = overlay.querySelector("#scale-ar-object-up");
+  const controlsHint = overlay.querySelector("#ar-controls-hint");
+  const promptElement = overlay.querySelector("#ar-prompt");
+  const raycaster = new THREE.Raycaster();
   const dragPlane = new THREE.Plane();
+  const dragOffset = new THREE.Vector3();
   const cameraDirection = new THREE.Vector3();
   const intersection = new THREE.Vector3();
+  let selectedModelIndex = 0;
+  let selectedObject = null;
+  let hitTestSource = null;
+  let session = null;
+  let xrReferenceSpace = null;
+  const xrViewerTransform = new THREE.Matrix4();
+  let dragging = false;
+  let closed = false;
 
-  function setSelection(object) {
-    if (selectedObject) selectedObject.traverse((part) => {
-      if (part.isMesh) part.material.emissive?.setHex(0x000000);
+  function loadModel(index) {
+    if (!loadedModels.has(index)) {
+      const model = models[index];
+      const loading = new Promise((resolve, reject) => {
+        loader.load(`/ar-assets/glbs/${encodeURIComponent(model.file)}`, (result) => {
+          resolve(result.scene);
+        }, undefined, reject);
+      });
+      loadedModels.set(index, loading);
+      loading.catch(() => loadedModels.delete(index));
+    }
+    return loadedModels.get(index);
+  }
+
+  function setSelectedModel(index) {
+    selectedModelIndex = index;
+    for (const button of catalogButtons) {
+      const selected = Number(button.dataset.modelIndex) === index;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    }
+    controlsHint.textContent = usingWebXR && !hitTestSource
+      ? `Selected ${models[index].name}. Surface detection is unavailable; tap to place it in front of you.`
+      : `Selected ${models[index].name}. Aim at a surface and tap to place.`;
+    loadModel(index).catch((error) => {
+      console.error(`Could not load AR model ${models[index].file}:`, error);
+      controlsHint.textContent = `Could not load ${models[index].name}. Check your connection and try another model.`;
     });
+  }
+
+  function setSelectedObject(object) {
     selectedObject = object;
-    if (selectedObject) selectedObject.traverse((part) => {
-      if (part.isMesh) part.material.emissive?.setHex(0x282828);
-    });
     controlsHint.textContent = selectedObject
-      ? "Selected. Drag to move, or use the size buttons."
-      : hitTestSource
-        ? "Aim at a surface and tap to place. Tap an object to select and drag."
-        : "Tap to place in front of you. Tap an object to select and drag.";
+      ? "Object selected. Drag to move it or use the size controls."
+      : "Aim at a surface and tap to place the selected item.";
   }
 
-  function addObject(position, quaternion) {
-    const style = objectStyles[nextStyle % objectStyles.length];
-    nextStyle += 1;
-    const material = new THREE.MeshStandardMaterial({
-      color: style.color,
-      roughness: 0.45,
-      metalness: 0.05,
-    });
-    const object = new THREE.Mesh(style.geometry(), material);
-    object.position.copy(position);
-    object.quaternion.copy(quaternion);
-    object.userData.arObject = object;
-    object.castShadow = false;
-    scene.add(object);
-    objects.add(object);
-    setSelection(object);
-    return object;
+  async function placeSelected(transform) {
+    const matrix = transform.clone();
+    const index = selectedModelIndex;
+    controlsHint.textContent = `Loading ${models[index].name}…`;
+    try {
+      const source = await loadModel(index);
+      if (closed || (usingWebXR && session?.ended)) return;
+      const object = source.clone(true);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const hitScale = new THREE.Vector3();
+      matrix.decompose(position, quaternion, hitScale);
+      object.position.copy(position);
+      object.quaternion.copy(quaternion);
+      object.scale.setScalar(models[index].scale);
+      object.userData.arScale = models[index].scale;
+      object.userData.arBaseScale = models[index].scale;
+      object.userData.arModelIndex = index;
+      object.traverse((part) => {
+        if (part.isMesh) part.userData.arObject = object;
+      });
+      scene.add(object);
+      placedObjects.add(object);
+      setSelectedObject(object);
+    } catch (error) {
+      console.error(`Could not place AR model ${models[index].file}:`, error);
+      controlsHint.textContent = `Could not place ${models[index].name}. Try again.`;
+    }
   }
 
-  function raycastFromController() {
+  function getXRRay() {
     raycaster.setFromXRController(controller);
     return raycaster;
   }
 
-  function selectOrPlace() {
-    const intersections = raycastFromController().intersectObjects(Array.from(objects), true);
-    if (intersections.length) {
-      setSelection(intersections[0].object.userData.arObject);
-      dragging = true;
-      camera.getWorldDirection(cameraDirection);
-      dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, selectedObject.position);
-      if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
-        dragOffset.copy(selectedObject.position).sub(intersection);
-      }
+  function startXRDrag() {
+    const hits = getXRRay().intersectObjects(Array.from(placedObjects), true);
+    if (!hits.length) {
+      dragging = false;
       return;
     }
-    if (reticle.visible) {
-      const pose = new THREE.Matrix4().copy(reticle.matrix);
-      const position = new THREE.Vector3().setFromMatrixPosition(pose);
-      const quaternion = new THREE.Quaternion().setFromRotationMatrix(pose);
-      addObject(position, quaternion);
+    setSelectedObject(hits[0].object.userData.arObject);
+    dragging = true;
+    dragPlane.setFromNormalAndCoplanarPoint(raycaster.ray.direction, selectedObject.position);
+    if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+      dragOffset.copy(selectedObject.position).sub(intersection);
     }
   }
 
-  function getScreenRay(clientX, clientY) {
+  function handleXRSelect() {
+    if (dragging) return;
+    if (reticle.visible) {
+      placeSelected(reticle.matrix);
+    } else if (!hitTestSource) {
+      placeInFrontOfViewer();
+    }
+  }
+
+  function getScreenRay(event) {
     const bounds = renderer.domElement.getBoundingClientRect();
     const pointer = new THREE.Vector2(
-      ((clientX - bounds.left) / bounds.width) * 2 - 1,
-      -((clientY - bounds.top) / bounds.height) * 2 + 1,
+      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
     );
     camera.aspect = bounds.width / bounds.height;
     camera.updateProjectionMatrix();
@@ -174,124 +216,161 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
     return raycaster;
   }
 
-  function handleCameraPointerDown(event) {
+  function handlePreviewPointerDown(event) {
     if (event.target !== renderer.domElement) return;
     event.preventDefault();
     renderer.domElement.setPointerCapture(event.pointerId);
-    getScreenRay(event.clientX, event.clientY);
-    const hits = raycaster.intersectObjects(Array.from(objects), true);
+    const ray = getScreenRay(event);
+    const hits = ray.intersectObjects(Array.from(placedObjects), true);
     if (hits.length) {
-      setSelection(hits[0].object.userData.arObject);
+      setSelectedObject(hits[0].object.userData.arObject);
       dragging = true;
-      camera.getWorldDirection(cameraDirection);
-      dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, selectedObject.position);
-      if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+      dragPlane.setFromNormalAndCoplanarPoint(ray.ray.direction, selectedObject.position);
+      if (ray.ray.intersectPlane(dragPlane, intersection)) {
         dragOffset.copy(selectedObject.position).sub(intersection);
       }
       return;
     }
-    const position = raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, 1.4);
-    addObject(position, camera.quaternion);
-  }
-
-  function handleCameraPointerMove(event) {
-    if (!dragging || !selectedObject) return;
-    getScreenRay(event.clientX, event.clientY);
-    if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
-      selectedObject.position.copy(intersection).add(dragOffset);
-    }
+    const placement = camera.matrixWorld.clone();
+    placement.setPosition(ray.ray.origin.clone().addScaledVector(ray.ray.direction, 1.4));
+    placeSelected(placement);
   }
 
   function updateDrag() {
     if (!dragging || !selectedObject) return;
-    raycastFromController();
+    getXRRay();
     if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
       selectedObject.position.copy(intersection).add(dragOffset);
     }
   }
 
-  function endDrag() {
-    dragging = false;
+  function updatePreviewDrag(event) {
+    if (!dragging || !selectedObject) return;
+    const ray = getScreenRay(event);
+    if (ray.ray.intersectPlane(dragPlane, intersection)) {
+      selectedObject.position.copy(intersection).add(dragOffset);
+    }
   }
 
   function scaleSelected(factor) {
     if (!selectedObject) {
-      controlsHint.textContent = "Tap an object to select it before changing its size.";
+      controlsHint.textContent = "Place an item first, then select it to resize.";
       return;
     }
-    selectedObject.scale.multiplyScalar(factor);
-    const scale = THREE.MathUtils.clamp(selectedObject.scale.x, 0.35, 3);
-    selectedObject.scale.setScalar(scale);
+    selectedObject.userData.arScale = THREE.MathUtils.clamp(
+      selectedObject.userData.arScale * factor,
+      selectedObject.userData.arBaseScale * 0.35,
+      selectedObject.userData.arBaseScale * 3,
+    );
+    selectedObject.scale.setScalar(selectedObject.userData.arScale);
   }
 
-  function addAtReticle() {
-    if (!usingWebXR) {
-      camera.getWorldDirection(cameraDirection);
-      const position = camera.position.clone().addScaledVector(cameraDirection, 1.4);
-      addObject(position, camera.quaternion);
-      controlsHint.textContent = "Camera view · tap to place, drag to move, use size buttons.";
+  function placeFromReticle() {
+    if (usingWebXR) {
+      if (reticle.visible) {
+        placeSelected(reticle.matrix);
+      } else if (!hitTestSource) {
+        placeInFrontOfViewer();
+      } else {
+        controlsHint.textContent = "Aim at a surface until the placement marker appears.";
+      }
       return;
     }
-    if (!reticle.visible) {
-      controlsHint.textContent = "Aim at a surface until the marker appears.";
-      return;
-    }
-    selectOrPlace();
+    const position = camera.position.clone();
+    camera.getWorldDirection(cameraDirection);
+    position.addScaledVector(cameraDirection, 1.4);
+    const transform = new THREE.Matrix4().compose(
+      position,
+      camera.quaternion,
+      new THREE.Vector3(1, 1, 1),
+    );
+    placeSelected(transform);
   }
 
-  const addButton = overlay.querySelector("#add-ar-object");
-  const scaleDownButton = overlay.querySelector("#scale-ar-object-down");
-  const scaleUpButton = overlay.querySelector("#scale-ar-object-up");
-  const controlsHint = overlay.querySelector("#ar-controls-hint");
+  function placeInFrontOfViewer() {
+    if (!xrReferenceSpace) return;
+    const transform = xrViewerTransform.clone().multiply(
+      new THREE.Matrix4().makeTranslation(0, 0, -1.4),
+    );
+    placeSelected(transform);
+  }
 
-  const handleAdd = () => addAtReticle();
-  const handleScaleDown = () => scaleSelected(0.85);
-  const handleScaleUp = () => scaleSelected(1.18);
-  const handleResize = () => {
+  const onCatalogClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedModel(Number(event.currentTarget.dataset.modelIndex));
+  };
+  const onBeforeXRSelect = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const overlayButtons = Array.from(overlay.querySelectorAll("button"));
+  const onPlaceClick = () => placeFromReticle();
+  const onScaleDown = () => scaleSelected(0.85);
+  const onScaleUp = () => scaleSelected(1.18);
+  const onEndDrag = () => {
+    dragging = false;
+  };
+  const onResize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   };
 
-  overlay.querySelector("#ar-prompt").textContent = prompt;
+  promptElement.textContent = prompt;
   overlay.classList.toggle("camera-preview", !usingWebXR);
-  if (cameraVideo) document.body.append(cameraVideo);
   overlay.classList.add("is-active");
   overlay.hidden = false;
   document.documentElement.classList.add("immersive-ar-active");
+  if (cameraVideo) document.body.append(cameraVideo);
   document.body.append(renderer.domElement);
-  addButton.addEventListener("click", handleAdd);
-  scaleDownButton.addEventListener("click", handleScaleDown);
-  scaleUpButton.addEventListener("click", handleScaleUp);
-  controller.addEventListener("selectstart", selectOrPlace);
-  controller.addEventListener("selectend", endDrag);
+
+  for (const button of overlayButtons) {
+    button.addEventListener("beforexrselect", onBeforeXRSelect);
+  }
+  for (const button of catalogButtons) {
+    button.addEventListener("click", onCatalogClick);
+  }
+  addButton.addEventListener("click", onPlaceClick);
+  scaleDownButton.addEventListener("click", onScaleDown);
+  scaleUpButton.addEventListener("click", onScaleUp);
+  controller.addEventListener("selectstart", startXRDrag);
+  controller.addEventListener("select", handleXRSelect);
+  controller.addEventListener("selectend", onEndDrag);
+  window.addEventListener("resize", onResize);
+
   if (!usingWebXR) {
     renderer.domElement.style.pointerEvents = "auto";
-    renderer.domElement.addEventListener("pointerdown", handleCameraPointerDown);
-    renderer.domElement.addEventListener("pointermove", handleCameraPointerMove);
-    renderer.domElement.addEventListener("pointerup", endDrag);
-    renderer.domElement.addEventListener("pointercancel", endDrag);
-    controlsHint.textContent = "Camera view · no surface tracking. Tap to place, drag to move.";
+    renderer.domElement.addEventListener("pointerdown", handlePreviewPointerDown);
+    renderer.domElement.addEventListener("pointermove", updatePreviewDrag);
+    renderer.domElement.addEventListener("pointerup", onEndDrag);
+    renderer.domElement.addEventListener("pointercancel", onEndDrag);
+    controlsHint.textContent = "Camera preview only. Tap to place; objects will not track room surfaces.";
   }
-  window.addEventListener("resize", handleResize);
 
   const cleanup = () => {
     if (closed) return;
     closed = true;
     exitButton.removeEventListener("click", endSession);
-    addButton.removeEventListener("click", handleAdd);
-    scaleDownButton.removeEventListener("click", handleScaleDown);
-    scaleUpButton.removeEventListener("click", handleScaleUp);
-    controller.removeEventListener("selectstart", selectOrPlace);
-    controller.removeEventListener("selectend", endDrag);
-    renderer.domElement.removeEventListener("pointerdown", handleCameraPointerDown);
-    renderer.domElement.removeEventListener("pointermove", handleCameraPointerMove);
-    renderer.domElement.removeEventListener("pointerup", endDrag);
-    renderer.domElement.removeEventListener("pointercancel", endDrag);
-    window.removeEventListener("resize", handleResize);
+    for (const button of overlayButtons) {
+      button.removeEventListener("beforexrselect", onBeforeXRSelect);
+    }
+    for (const button of catalogButtons) {
+      button.removeEventListener("click", onCatalogClick);
+    }
+    addButton.removeEventListener("click", onPlaceClick);
+    scaleDownButton.removeEventListener("click", onScaleDown);
+    scaleUpButton.removeEventListener("click", onScaleUp);
+    controller.removeEventListener("selectstart", startXRDrag);
+    controller.removeEventListener("select", handleXRSelect);
+    controller.removeEventListener("selectend", onEndDrag);
+    renderer.domElement.removeEventListener("pointerdown", handlePreviewPointerDown);
+    renderer.domElement.removeEventListener("pointermove", updatePreviewDrag);
+    renderer.domElement.removeEventListener("pointerup", onEndDrag);
+    renderer.domElement.removeEventListener("pointercancel", onEndDrag);
+    window.removeEventListener("resize", onResize);
     hitTestSource?.cancel();
-    overlay.classList.remove("is-active");
-    overlay.classList.remove("camera-preview");
+    overlay.classList.remove("is-active", "camera-preview");
     overlay.hidden = true;
     document.documentElement.classList.remove("immersive-ar-active");
     renderer.setAnimationLoop(null);
@@ -301,83 +380,79 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
     cameraStream?.getTracks().forEach((track) => track.stop());
     reticle.geometry.dispose();
     reticle.material.dispose();
-    for (const object of objects) {
-      object.geometry.dispose();
-      object.material.dispose();
+
+    const geometries = new Set();
+    const materials = new Set();
+    for (const sourcePromise of loadedModels.values()) {
+      sourcePromise.then((source) => {
+        source.traverse((part) => {
+          if (!part.isMesh) return;
+          geometries.add(part.geometry);
+          for (const material of Array.isArray(part.material) ? part.material : [part.material]) {
+            materials.add(material);
+          }
+        });
+        geometries.forEach((geometry) => geometry.dispose());
+        materials.forEach((material) => material.dispose());
+      }).catch(() => {});
     }
-    objects.clear();
   };
 
-  function endSession() {
-    if (session) {
-      session.end();
-    } else {
-      cleanup();
-    }
+  async function endSession() {
+    if (session) await session.end();
+    else cleanup();
   }
+
+  const onSessionEnded = () => cleanup();
+  exitButton.addEventListener("click", endSession);
 
   if (usingWebXR) {
     try {
       session = await sessionRequest;
-      if (session.environmentBlendMode === "opaque") {
-        throw new Error(
-          "This browser did not provide camera passthrough. Try a phone browser that supports immersive AR.",
-        );
-      }
-      exitButton.addEventListener("click", endSession);
+      session.addEventListener("end", onSessionEnded, { once: true });
       await renderer.xr.setSession(session);
       const viewerSpace = await session.requestReferenceSpace("viewer");
+      xrReferenceSpace = renderer.xr.getReferenceSpace();
       try {
         hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
       } catch (error) {
-        console.warn("Surface hit testing is unavailable; using tracked viewer placement:", error);
-        controlsHint.textContent = "Surface tracking unavailable. Objects will stay in session space.";
+        console.warn("Immersive AR started without surface hit-testing:", error);
+      }
+      setSelectedModel(0);
+      if (!hitTestSource) {
+        controlsHint.textContent = "Surface detection is unavailable. Tap to place objects in front of you; placement may not stay fixed to room surfaces.";
       }
     } catch (error) {
       if (session) await session.end();
       cleanup();
-      console.error("Could not start an immersive AR session:", error);
-      if (error instanceof Error && error.message.includes("did not provide camera passthrough")) {
-        throw error;
-      }
-      if (error.name === "NotSupportedError") {
-        throw new Error(
-          "This browser or XR runtime could not start immersive AR. Check its AR support and permissions, or use the untracked camera preview.",
-        );
-      }
-      throw new Error("Could not start AR. Check camera permissions and hit-test support, then try again.");
+      console.error("Could not start the AR furniture viewer:", error);
+      throw new Error("This viewer could not start an immersive AR session. It may support XR web apps without camera passthrough, or may not support the features this app needs. Try an AR-compatible browser, or use camera preview without room tracking.");
     }
-    session.addEventListener("end", cleanup, { once: true });
   } else {
-    exitButton.addEventListener("click", endSession);
+    setSelectedModel(0);
   }
 
-  renderer.setAnimationLoop((_time, frame) => {
-    if (usingWebXR && frame && hitTestSource) {
-      const hit = frame.getHitTestResults(hitTestSource)[0];
-      if (hit) {
-        const pose = hit.getPose(renderer.xr.getReferenceSpace());
-        if (pose) {
-          reticle.matrix.fromArray(pose.transform.matrix);
-          reticle.visible = true;
-        }
-      } else {
-        reticle.visible = false;
-      }
-    } else if (usingWebXR && frame) {
-      const viewerPose = frame.getViewerPose(renderer.xr.getReferenceSpace());
+  renderer.setAnimationLoop((time, frame) => {
+    if (usingWebXR && frame) {
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      const viewerPose = referenceSpace && frame.getViewerPose(referenceSpace);
       if (viewerPose) {
-        const viewerMatrix = new THREE.Matrix4().fromArray(viewerPose.transform.matrix);
-        const position = new THREE.Vector3().setFromMatrixPosition(viewerMatrix);
-        const quaternion = new THREE.Quaternion().setFromRotationMatrix(viewerMatrix);
-        position.add(new THREE.Vector3(0, 0, -1.4).applyQuaternion(quaternion));
-        reticle.matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1));
-        reticle.visible = true;
-      } else {
-        reticle.visible = false;
+        xrViewerTransform.fromArray(viewerPose.transform.matrix);
       }
+      if (hitTestSource && referenceSpace) {
+        const results = frame.getHitTestResults(hitTestSource);
+        if (results.length) {
+          const pose = results[0].getPose(referenceSpace);
+          if (pose) {
+            reticle.visible = true;
+            reticle.matrix.fromArray(pose.transform.matrix);
+          }
+        } else {
+          reticle.visible = false;
+        }
+      }
+      updateDrag();
     }
-    if (usingWebXR) updateDrag();
     renderer.render(scene, camera);
   });
 

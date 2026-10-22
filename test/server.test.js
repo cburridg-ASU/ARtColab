@@ -123,6 +123,7 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /id="room-code-input"/);
   assert.match(joinPage, /id="mobile-game-panel"/);
   assert.match(joinPage, /id="camera-preview"/);
+  assert.match(joinPage, /Choose furniture to place/);
   assert.match(joinPage, /id="add-ar-object"/);
   assert.match(joinPage, /id="scale-ar-object-down"/);
   assert.match(joinPage, /id="scale-ar-object-up"/);
@@ -130,18 +131,33 @@ test("serves host and player screens", async () => {
 });
 
 test("serves the AR module and Three.js runtime", async () => {
-  const [arResponse, threeResponse, threeCoreResponse] = await Promise.all([
+  const [
+    arResponse,
+    threeResponse,
+    threeCoreResponse,
+    loaderResponse,
+    geometryUtilsResponse,
+    skeletonUtilsResponse,
+  ] = await Promise.all([
     fetch(`${baseUrl}/ar.js`),
     fetch(`${baseUrl}/vendor/three.module.js`),
     fetch(`${baseUrl}/vendor/three.core.js`),
+    fetch(`${baseUrl}/vendor/three-examples/loaders/GLTFLoader.js`),
+    fetch(`${baseUrl}/vendor/three-examples/utils/BufferGeometryUtils.js`),
+    fetch(`${baseUrl}/vendor/three-examples/utils/SkeletonUtils.js`),
   ]);
   const arModule = await arResponse.text();
   const threeModule = await threeResponse.text();
   const threeCoreModule = await threeCoreResponse.text();
+  const loaderModule = await loaderResponse.text();
+  const joinPageResponse = await fetch(`${baseUrl}/join`);
+  const joinPage = await joinPageResponse.text();
 
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
   assert.match(arModule, /mediaDevices\?\.getUserMedia/);
+  assert.match(arModule, /GLTFLoader/);
+  assert.match(arModule, /placeSelected/);
   assert.doesNotMatch(arModule, /await navigator\.xr\?\.isSessionSupported/);
   assert.ok(
     arModule.indexOf('navigator.xr.requestSession("immersive-ar"') <
@@ -149,14 +165,13 @@ test("serves the AR module and Three.js runtime", async () => {
     "the XR session request must happen directly from the user gesture",
   );
   assert.match(arModule, /className = "ar-camera"/);
-  assert.match(arModule, /Camera view · no surface tracking/);
-  assert.match(arModule, /else \{\s*cleanup\(\);\s*\}/);
-  assert.match(arModule, /optionalFeatures: \["hit-test", "dom-overlay"\]/);
-  assert.match(arModule, /using tracked viewer placement/);
-  assert.match(arModule, /frame\.getViewerPose\(renderer\.xr\.getReferenceSpace\(\)\)/);
+  assert.match(arModule, /async function endSession\(\)/);
+  assert.match(arModule, /optionalFeatures: \["hit-test", "dom-overlay", "light-estimation"\]/);
+  assert.doesNotMatch(arModule, /requiredFeatures: \["hit-test"\]/);
+  assert.match(arModule, /placeInFrontOfViewer/);
+  assert.match(arModule, /Surface detection is unavailable/);
   assert.match(arModule, /premultipliedAlpha: false/);
   assert.match(arModule, /setClearAlpha\(0\)/);
-  assert.match(arModule, /session\.environmentBlendMode === "opaque"/);
   assert.match(arModule, /immersive-ar-active/);
   assert.match(arModule, /getHitTestResults/);
   assert.match(arModule, /selectstart/);
@@ -165,6 +180,29 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(threeModule, /WebGLRenderer/);
   assert.equal(threeCoreResponse.status, 200);
   assert.match(threeCoreModule, /REVISION/);
+  assert.equal(loaderResponse.status, 200);
+  assert.match(loaderResponse.headers.get("content-type"), /^text\/javascript; charset=utf-8$/);
+  assert.match(loaderModule, /class GLTFLoader/);
+  assert.equal(geometryUtilsResponse.status, 200);
+  assert.equal(geometryUtilsResponse.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.equal(skeletonUtilsResponse.status, 200);
+  assert.equal(skeletonUtilsResponse.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.equal(joinPageResponse.status, 200);
+  assert.match(joinPage, /"three": "\/vendor\/three\.module\.js"/);
+});
+
+test("serves the supplied furniture thumbnails and GLB models", async () => {
+  const [thumbnailResponse, modelResponse, traversalResponse] = await Promise.all([
+    fetch(`${baseUrl}/ar-assets/pngs/armchair.png`, { method: "HEAD" }),
+    fetch(`${baseUrl}/ar-assets/glbs/dylan_armchair_yolk_yellow.glb`, { method: "HEAD" }),
+    fetch(`${baseUrl}/ar-assets/glbs/..%5C..%5Cserver.js`),
+  ]);
+
+  assert.equal(thumbnailResponse.status, 200);
+  assert.match(thumbnailResponse.headers.get("content-type"), /^image\/png$/);
+  assert.equal(modelResponse.status, 200);
+  assert.equal(modelResponse.headers.get("content-type"), "model/gltf-binary");
+  assert.equal(traversalResponse.status, 404);
 });
 
 test("supports HEAD requests without a response body", async () => {

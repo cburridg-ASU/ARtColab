@@ -14,6 +14,8 @@ const vendorFiles = {
   "/vendor/three.core.js": path.join(__dirname, "node_modules", "three", "build", "three.core.js"),
   "/vendor/three.module.js": path.join(__dirname, "node_modules", "three", "build", "three.module.js"),
 };
+const threeExamplesDirectory = path.join(__dirname, "node_modules", "three", "examples", "jsm");
+const arAssetsDirectory = path.join(__dirname, "ar-object");
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -246,13 +248,51 @@ const server = http.createServer(async (request, response) => {
     response.end("Bad Request");
     return;
   }
-  const filePath = vendorFiles[pathnameFromUrl]
-    ? vendorFiles[pathnameFromUrl]
-    : path.resolve(publicDirectory, pageAliases[pathnameFromUrl] || pathnameFromUrl.replace(/^[/\\]+/, ""));
-  if (
-    !vendorFiles[pathnameFromUrl] &&
-    !filePath.startsWith(`${publicDirectory}${path.sep}`)
-  ) {
+  let filePath;
+  if (vendorFiles[pathnameFromUrl]) {
+    filePath = vendorFiles[pathnameFromUrl];
+  } else if (pathnameFromUrl.startsWith("/vendor/three-examples/")) {
+    const examplePath = path.resolve(
+      threeExamplesDirectory,
+      pathnameFromUrl.slice("/vendor/three-examples/".length),
+    );
+    if (
+      !examplePath.startsWith(`${threeExamplesDirectory}${path.sep}`) ||
+      path.extname(examplePath) !== ".js"
+    ) {
+      response.writeHead(404);
+      response.end("Not Found");
+      return;
+    }
+    filePath = examplePath;
+  } else if (pathnameFromUrl.startsWith("/ar-assets/")) {
+    const assetPath = path.resolve(
+      arAssetsDirectory,
+      pathnameFromUrl.slice("/ar-assets/".length),
+    );
+    const assetExtension = path.extname(assetPath).toLowerCase();
+    if (
+      !assetPath.startsWith(`${arAssetsDirectory}${path.sep}`) ||
+      ![".glb", ".png"].includes(assetExtension)
+    ) {
+      response.writeHead(404);
+      response.end("Not Found");
+      return;
+    }
+    filePath = assetPath;
+  } else {
+    filePath = path.resolve(
+      publicDirectory,
+      pageAliases[pathnameFromUrl] || pathnameFromUrl.replace(/^[/\\]+/, ""),
+    );
+    if (!filePath.startsWith(`${publicDirectory}${path.sep}`)) {
+      response.writeHead(404);
+      response.end("Not Found");
+      return;
+    }
+  }
+
+  if (!filePath) {
     response.writeHead(404);
     response.end("Not Found");
     return;
@@ -266,8 +306,11 @@ const server = http.createServer(async (request, response) => {
     }
 
     response.writeHead(200, {
-      "Content-Type": contentTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Content-Type": path.extname(filePath).toLowerCase() === ".glb"
+        ? "model/gltf-binary"
+        : contentTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
       "Content-Length": stats.size,
+      "Cache-Control": pathnameFromUrl.startsWith("/ar-assets/") ? "public, max-age=3600" : "no-cache",
       "X-Content-Type-Options": "nosniff",
     });
 
