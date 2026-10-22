@@ -9,6 +9,9 @@ const joinedName = document.querySelector("#joined-name");
 const connectionElement = document.querySelector("#player-connection");
 const gamePanel = document.querySelector("#mobile-game-panel");
 const mobilePrompt = document.querySelector("#mobile-prompt");
+const mobileTimerElement = document.querySelector("#mobile-round-timer");
+const arTimerElement = document.querySelector("#ar-round-timer");
+const mobileCompleteElement = document.querySelector("#mobile-round-complete");
 const enterArButton = document.querySelector("#enter-ar");
 const cameraPreviewButton = document.querySelector("#camera-preview");
 const arError = document.querySelector("#ar-error");
@@ -18,6 +21,16 @@ const exitArButton = document.querySelector("#exit-ar");
 
 let playerId;
 let roomCode;
+let timerEndsAt = null;
+let roundComplete = false;
+
+function updateRoundTimer() {
+  if (!timerEndsAt) return;
+  const secondsRemaining = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
+  const time = `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`;
+  mobileTimerElement.textContent = `TIME LEFT ${time}`;
+  arTimerElement.textContent = time;
+}
 
 const initialCode = new URLSearchParams(window.location.search).get("code");
 if (initialCode) codeInput.value = initialCode.toUpperCase().slice(0, 6);
@@ -48,7 +61,16 @@ function connectToRoom() {
         errorElement.textContent = "You are no longer in this room. Join again from the host screen.";
         errorElement.hidden = false;
       }
-      if (message.phase === "active") showActivePrompt(message.prompt);
+      if (message.phase === "active") {
+        timerEndsAt = message.timerEndsAt;
+        roundComplete = false;
+        showActivePrompt(message.prompt);
+        updateRoundTimer();
+      } else if (message.phase === "complete") {
+        timerEndsAt = message.timerEndsAt;
+        showRoundComplete(message.prompt);
+        updateRoundTimer();
+      }
     }
   });
   socket.addEventListener("close", () => {
@@ -63,13 +85,27 @@ function connectToRoom() {
 }
 
 function showActivePrompt(prompt) {
+  roundComplete = false;
   mobilePrompt.textContent = prompt;
   arPrompt.textContent = prompt;
+  mobileCompleteElement.hidden = true;
+  enterArButton.hidden = false;
+  cameraPreviewButton.hidden = true;
   joinedPanel.hidden = true;
   gamePanel.hidden = false;
 }
 
+function showRoundComplete(prompt) {
+  showActivePrompt(prompt);
+  roundComplete = true;
+  mobileCompleteElement.hidden = false;
+  enterArButton.hidden = true;
+  cameraPreviewButton.hidden = true;
+  exitArButton.click();
+}
+
 async function startAR(mode) {
+  if (roundComplete) return;
   enterArButton.disabled = true;
   cameraPreviewButton.disabled = true;
   arError.hidden = true;
@@ -82,10 +118,13 @@ async function startAR(mode) {
     });
     arError.hidden = true;
     cameraPreviewButton.hidden = true;
+    if (roundComplete) exitArButton.click();
   } catch (error) {
-    arError.textContent = error.message;
-    arError.hidden = false;
-    cameraPreviewButton.hidden = false;
+    if (!roundComplete) {
+      arError.textContent = error.message;
+      arError.hidden = false;
+      cameraPreviewButton.hidden = false;
+    }
   } finally {
     enterArButton.disabled = false;
     cameraPreviewButton.disabled = false;
@@ -94,6 +133,8 @@ async function startAR(mode) {
 
 enterArButton.addEventListener("click", () => startAR("immersive"));
 cameraPreviewButton.addEventListener("click", () => startAR("camera"));
+
+window.setInterval(updateRoundTimer, 1000);
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();

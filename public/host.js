@@ -5,6 +5,8 @@ const joinUrlElement = document.querySelector("#join-url");
 const qrImage = document.querySelector("#room-qr");
 const promptElement = document.querySelector("#prompt");
 const promptPanel = document.querySelector("#prompt-panel");
+const timerElement = document.querySelector("#round-timer");
+const completeElement = document.querySelector("#round-complete");
 const playerList = document.querySelector("#player-list");
 const summaryElement = document.querySelector("#player-summary");
 const statusElement = document.querySelector("#connection-status");
@@ -14,6 +16,17 @@ const startButton = document.querySelector("#start-session");
 const sessionErrorElement = document.querySelector("#session-error");
 
 let roomCode;
+let timerEndsAt = null;
+
+function updateRoundTimer() {
+  if (!timerEndsAt) {
+    timerElement.hidden = true;
+    return;
+  }
+  const secondsRemaining = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
+  timerElement.textContent = `TIME LEFT ${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`;
+  timerElement.hidden = false;
+}
 
 function setStatus(text, connected) {
   statusElement.textContent = text;
@@ -28,9 +41,12 @@ function showError(message) {
 function renderRoom(room) {
   codeElement.textContent = room.code;
   promptElement.textContent = room.prompt;
-  promptPanel.hidden = room.phase !== "active";
-  startButton.hidden = room.phase === "active";
+  timerEndsAt = room.timerEndsAt || null;
+  promptPanel.hidden = room.phase === "lobby";
+  completeElement.hidden = room.phase !== "complete";
+  startButton.hidden = room.phase !== "lobby";
   startButton.disabled = false;
+  updateRoundTimer();
   const connectedPlayers = room.players.filter((player) => player.connected);
   countElement.textContent = `${connectedPlayers.length} ${connectedPlayers.length === 1 ? "PLAYER" : "PLAYERS"}`;
   summaryElement.textContent = room.players.length
@@ -114,12 +130,16 @@ startButton.addEventListener("click", async () => {
     promptElement.textContent = result.prompt;
     promptPanel.hidden = false;
     startButton.hidden = true;
+    timerEndsAt = result.timerEndsAt;
+    updateRoundTimer();
   } catch (error) {
     sessionErrorElement.textContent = error.message;
     sessionErrorElement.hidden = false;
     startButton.disabled = false;
   }
 });
+
+window.setInterval(updateRoundTimer, 1000);
 
 copyButton.addEventListener("click", async () => {
   try {

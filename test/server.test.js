@@ -119,10 +119,16 @@ test("serves host and player screens", async () => {
   assert.equal(hostResponse.status, 200);
   assert.match(hostPage, /id="create-room"/);
   assert.match(hostPage, /id="start-session"/);
+  assert.match(hostPage, /id="round-timer"/);
+  assert.match(hostPage, /id="round-complete"/);
   assert.equal(joinResponse.status, 200);
   assert.match(joinPage, /id="room-code-input"/);
   assert.match(joinPage, /id="mobile-game-panel"/);
   assert.match(joinPage, /id="camera-preview"/);
+  assert.match(joinPage, /id="mobile-round-timer"/);
+  assert.match(joinPage, /id="ar-round-timer"/);
+  assert.match(joinPage, /id="exit-ar"/);
+  assert.match(joinPage, /Time’s up!/);
   assert.match(joinPage, /Choose furniture to place/);
   assert.match(joinPage, /id="add-ar-object"/);
   assert.match(joinPage, /id="scale-ar-object-down"/);
@@ -289,6 +295,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const hostSnapshot = await hostSnapshotPromise;
   assert.equal(hostSnapshot.code, room.code);
   assert.equal(hostSnapshot.phase, "lobby");
+  assert.equal(hostSnapshot.timerEndsAt, null);
   assert.deepEqual(hostSnapshot.players, []);
 
   const joinResponsePromise = fetch(`${baseUrl}/api/rooms/${room.code}/players`, {
@@ -330,6 +337,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     playerSocket,
     (message) => message.type === "room" && message.phase === "active",
   );
+  const startRequestedAt = Date.now();
   const startResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
     method: "POST",
   });
@@ -338,12 +346,17 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.equal(startResponse.status, 200);
   assert.equal(started.phase, "active");
   assert.equal(started.prompt, room.prompt);
+  assert.ok(started.timerEndsAt >= startRequestedAt + 29_000);
+  assert.ok(started.timerEndsAt <= Date.now() + 30_000);
   assert.equal(activeRoom.prompt, room.prompt);
+  assert.equal(activeRoom.timerEndsAt, started.timerEndsAt);
   assert.equal((await activePlayerRoomPromise).phase, "active");
   const repeatedStart = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
     method: "POST",
   });
+  const repeatedStartResult = await repeatedStart.json();
   assert.equal(repeatedStart.status, 200);
+  assert.equal(repeatedStartResult.timerEndsAt, started.timerEndsAt);
 
   const disconnectedRoomPromise = waitForMessage(
     hostSocket,

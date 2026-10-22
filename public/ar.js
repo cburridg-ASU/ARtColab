@@ -370,6 +370,7 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
     renderer.domElement.removeEventListener("pointercancel", onEndDrag);
     window.removeEventListener("resize", onResize);
     hitTestSource?.cancel();
+    session = null;
     overlay.classList.remove("is-active", "camera-preview");
     overlay.hidden = true;
     document.documentElement.classList.remove("immersive-ar-active");
@@ -399,8 +400,17 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   };
 
   async function endSession() {
-    if (session) await session.end();
-    else cleanup();
+    if (!session) {
+      cleanup();
+      return;
+    }
+    try {
+      await session.end();
+    } catch (error) {
+      console.error("Could not cleanly end the immersive AR session:", error);
+    } finally {
+      cleanup();
+    }
   }
 
   const onSessionEnded = () => cleanup();

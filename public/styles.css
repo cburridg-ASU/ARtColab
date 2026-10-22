@@ -314,6 +314,24 @@ h1 span {
   font-weight: 600;
 }
 
+.round-timer {
+  margin: 12px 0 0;
+  color: #f05d43;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.round-complete {
+  margin: 15px 0 0;
+  color: #f05d43;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
 .players-heading h2 {
   margin: 0;
   font-family: "Space Grotesk", sans-serif;
@@ -556,6 +574,30 @@ h1 span {
   margin: 0;
   background: #fffdf2e8;
   pointer-events: auto;
+}
+
+.ar-hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.ar-hud-actions .round-timer {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid #ffffff80;
+  border-radius: 10px;
+  background: #fffdf2e8;
+  color: #25241f;
+}
+
+.ar-hud-actions #exit-ar {
+  min-height: 42px;
+  border-color: #f05d43;
+  background: #f05d43;
+  color: white;
+  font-weight: 700;
 }
 
 .ar-catalog {

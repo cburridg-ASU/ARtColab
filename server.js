@@ -9,6 +9,7 @@ const { WebSocket, WebSocketServer } = require("ws");
 const publicDirectory = path.join(__dirname, "public");
 const roomCodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomLifetime = 2 * 60 * 60 * 1000;
+const roundDurationMs = 30 * 1000;
 const maxRequestBytes = 4096;
 const vendorFiles = {
   "/vendor/three.core.js": path.join(__dirname, "node_modules", "three", "build", "three.core.js"),
@@ -53,6 +54,7 @@ function getRoomSnapshot(room) {
     code: room.code,
     prompt: room.prompt,
     phase: room.phase,
+    timerEndsAt: room.timerEndsAt,
     players: Array.from(room.players.values(), ({ id, name, connected }) => ({
       id,
       name,
@@ -172,6 +174,8 @@ const server = http.createServer(async (request, response) => {
           code,
           prompt: "Build something unexpected.",
           phase: "lobby",
+          timerEndsAt: null,
+          roundTimer: null,
           players: new Map(),
           clients: new Set(),
           createdAt: Date.now(),
@@ -225,11 +229,24 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    if (room.phase !== "active") {
+    if (room.phase === "lobby") {
       room.phase = "active";
+      room.timerEndsAt = Date.now() + roundDurationMs;
+      room.roundTimer = setTimeout(() => {
+        if (room.phase !== "active") return;
+        room.phase = "complete";
+        room.roundTimer = null;
+        broadcastRoom(room);
+      }, roundDurationMs);
+      room.roundTimer.unref();
       broadcastRoom(room);
     }
-    sendJson(response, 200, { code, phase: room.phase, prompt: room.prompt });
+    sendJson(response, 200, {
+      code,
+      phase: room.phase,
+      prompt: room.prompt,
+      timerEndsAt: room.timerEndsAt,
+    });
     return;
   }
 
@@ -405,6 +422,7 @@ const cleanup = setInterval(() => {
   const expiry = Date.now() - roomLifetime;
   for (const [code, room] of rooms) {
     if (room.createdAt < expiry) {
+      if (room.roundTimer) clearTimeout(room.roundTimer);
       for (const client of room.clients) client.close(1001, "Room expired");
       rooms.delete(code);
     }

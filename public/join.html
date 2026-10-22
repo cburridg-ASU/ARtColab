@@ -33,8 +33,10 @@
         <section class="mobile-game-panel" id="mobile-game-panel" aria-labelledby="mobile-prompt" hidden>
           <p class="eyebrow">YOUR PROMPT</p>
           <h2 class="mobile-prompt" id="mobile-prompt"></h2>
+          <p class="round-timer" id="mobile-round-timer" role="timer" aria-live="off"></p>
+          <p class="round-complete" id="mobile-round-complete" role="status" hidden>Time’s up!</p>
           <p class="joined-message">Look around and find a place to start creating.</p>
-          <button class="primary-button" id="enter-ar" type="button">Enter immersive AR <span aria-hidden="true">→</span></button>
+          <button class="primary-button" id="enter-ar" type="button">Enter AR <span aria-hidden="true">→</span></button>
           <button class="secondary-button" id="camera-preview" type="button" hidden>Use camera preview (no room tracking)</button>
           <p class="error-message" id="ar-error" role="alert" hidden></p>
         </section>
@@ -42,7 +44,10 @@
       <section class="ar-overlay" id="ar-overlay" aria-label="AR creation space" hidden>
         <div class="ar-hud">
           <div class="ar-hud-prompt"><span class="eyebrow">YOUR PROMPT</span><p id="ar-prompt"></p></div>
-          <button class="secondary-button" id="exit-ar" type="button">Exit AR</button>
+          <div class="ar-hud-actions">
+            <p class="round-timer" id="ar-round-timer" role="timer" aria-live="off"></p>
+            <button class="secondary-button" id="exit-ar" type="button" aria-label="Exit AR and return to the game">Exit AR</button>
+          </div>
         </div>
         <div class="ar-catalog" id="ar-catalog" aria-label="Choose furniture to place">
           <button class="ar-item is-selected" type="button" data-model-index="0" aria-pressed="true" aria-label="Select yellow armchair">
