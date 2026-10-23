@@ -29,7 +29,7 @@ export async function enterAR({
 
   if (usingWebXR) {
     if (!navigator.xr) {
-      throw new Error("This viewer does not expose WebXR immersive AR. It may display XR web apps without providing camera passthrough. Try an AR-compatible browser, or use camera preview without room tracking.");
+      throw new Error("This browser does not expose WebXR immersive AR. Open the game in your XR viewer's immersive browser, then allow camera and motion access.");
     }
     try {
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
@@ -38,7 +38,7 @@ export async function enterAR({
       });
     } catch (error) {
       console.error("Could not request an immersive AR session:", error);
-      throw new Error("This viewer did not start immersive AR. It may not provide camera passthrough to web apps. Try an AR-compatible browser, or use camera preview without room tracking.");
+      throw immersiveSessionError(error);
     }
   } else {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -212,17 +212,7 @@ export async function enterAR({
 
   function handleXRSelect() {
     if (dragging) return;
-    if (isShowcaseMode) {
-      if (!showcaseGroup) return;
-      if (reticle.visible) {
-        showcaseGroup.matrix.copy(reticle.matrix);
-        showcaseGroup.matrixAutoUpdate = false;
-        scene.add(showcaseGroup);
-      } else if (!hitTestSource) {
-        placeShowcaseInFrontOfViewer();
-      }
-      return;
-    }
+    if (isShowcaseMode) return;
     if (reticle.visible) {
       placeSelected(reticle.matrix);
     } else if (!hitTestSource) {
@@ -297,6 +287,8 @@ export async function enterAR({
     return Array.from(placedObjects, (object) => ({
       modelIndex: object.userData.arModelIndex,
       scale: object.userData.arScale / object.userData.arBaseScale,
+      position: object.position.toArray(),
+      quaternion: object.quaternion.toArray(),
     }));
   }
 
@@ -312,55 +304,40 @@ export async function enterAR({
   }
 
   async function createShowcaseGroup() {
-    const objects = contributions.flatMap((contribution) =>
-      contribution.objects.map((object) => ({
-        ...object,
-        playerName: contribution.playerName,
-      })),
-    );
     const group = new THREE.Group();
-    if (!objects.length) return group;
-    const columns = Math.ceil(Math.sqrt(objects.length));
-    const spacing = 1.25;
-    for (let index = 0; index < objects.length; index += 1) {
-      const entry = objects[index];
-      const model = models[entry.modelIndex];
-      const source = await loadModel(entry.modelIndex);
-      const object = source.clone(true);
-      object.scale.setScalar(model.scale * entry.scale);
-      object.position.set(
-        (index % columns - (columns - 1) / 2) * spacing,
-        0,
-        Math.floor(index / columns) * spacing,
-      );
-      group.add(object);
+    const columns = Math.max(1, Math.ceil(Math.sqrt(contributions.length)));
+    const spacing = 4.5;
+    for (let playerIndex = 0; playerIndex < contributions.length; playerIndex += 1) {
+      const contribution = contributions[playerIndex];
+      const playerGroup = new THREE.Group();
+      for (const [objectIndex, entry] of contribution.objects.entries()) {
+        const model = models[entry.modelIndex];
+        if (!model) throw new Error("A saved object uses an unknown furniture model.");
+        const source = await loadModel(entry.modelIndex);
+        const object = source.clone(true);
+        object.scale.setScalar(model.scale * entry.scale);
+        if (Array.isArray(entry.position) && Array.isArray(entry.quaternion)) {
+          object.position.fromArray(entry.position);
+          object.quaternion.fromArray(entry.quaternion).normalize();
+        } else {
+          object.position.set(objectIndex * 1.25, 0, 0);
+        }
+        playerGroup.add(object);
+      }
+      playerGroup.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(playerGroup);
+      const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
+      const targetX = (playerIndex % columns - (columns - 1) / 2) * spacing;
+      const targetZ = (Math.floor(playerIndex / columns) - (Math.ceil(contributions.length / columns) - 1) / 2) * spacing;
+      playerGroup.position.set(targetX - center.x, -bounds.min.y, targetZ - center.z);
+      group.add(playerGroup);
     }
     return group;
   }
 
-  function placeShowcaseInFrontOfViewer() {
-    if (!showcaseGroup) return;
-    showcaseGroup.matrix.copy(
-      xrViewerTransform.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, -1.4)),
-    );
-    showcaseGroup.matrixAutoUpdate = false;
-    scene.add(showcaseGroup);
-  }
-
   function placeFromReticle() {
     if (usingWebXR) {
-      if (isShowcaseMode) {
-        if (reticle.visible) {
-          showcaseGroup.matrix.copy(reticle.matrix);
-          showcaseGroup.matrixAutoUpdate = false;
-          scene.add(showcaseGroup);
-        } else if (!hitTestSource) {
-          placeShowcaseInFrontOfViewer();
-        } else {
-          controlsHint.textContent = "Aim at a surface until the placement marker appears.";
-        }
-        return;
-      }
+      if (isShowcaseMode) return;
       if (reticle.visible) {
         placeSelected(reticle.matrix);
       } else if (!hitTestSource) {
@@ -523,31 +500,30 @@ export async function enterAR({
       session = await sessionRequest;
       session.addEventListener("end", onSessionEnded, { once: true });
       await renderer.xr.setSession(session);
-      const viewerSpace = await session.requestReferenceSpace("viewer");
       xrReferenceSpace = renderer.xr.getReferenceSpace();
-      try {
-        hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-      } catch (error) {
-        console.warn("Immersive AR started without surface hit-testing:", error);
-      }
-      setSelectedModel(0);
-      if (isShowcaseMode) {
-        showcaseGroup = await createShowcaseGroup();
-        addButton.textContent = "Place combined scene";
-        controlsHint.textContent = hitTestSource
-          ? "Aim at a surface and tap to place the combined scene."
-          : "Tap to place the combined scene in front of you.";
-      }
-      if (!hitTestSource) {
-        if (!isShowcaseMode) {
+      if (!isShowcaseMode) {
+        const viewerSpace = await session.requestReferenceSpace("viewer");
+        try {
+          hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+        } catch (error) {
+          console.warn("Immersive AR started without surface hit-testing:", error);
+        }
+        setSelectedModel(0);
+        if (!hitTestSource) {
           controlsHint.textContent = "Surface detection is unavailable. Tap to place objects in front of you; placement may not stay fixed to room surfaces.";
         }
       }
+      if (isShowcaseMode) {
+        showcaseGroup = await createShowcaseGroup();
+        controlsHint.textContent = "Viewing the saved combined scene. Exit AR to return to the results.";
+      }
     } catch (error) {
-      if (session) await session.end();
+      if (session) await session.end().catch((endError) => {
+        console.error("Could not end the failed immersive AR session:", endError);
+      });
       cleanup();
       console.error("Could not start the AR furniture viewer:", error);
-      throw new Error("This viewer could not start an immersive AR session. It may support XR web apps without camera passthrough, or may not support the features this app needs. Try an AR-compatible browser, or use camera preview without room tracking.");
+      throw immersiveSessionError(error);
     }
   } else {
     setSelectedModel(0);
@@ -559,6 +535,13 @@ export async function enterAR({
       const viewerPose = referenceSpace && frame.getViewerPose(referenceSpace);
       if (viewerPose) {
         xrViewerTransform.fromArray(viewerPose.transform.matrix);
+        if (isShowcaseMode && showcaseGroup && !showcaseGroup.parent) {
+          showcaseGroup.matrix.copy(
+            xrViewerTransform.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, -1.5)),
+          );
+          showcaseGroup.matrixAutoUpdate = false;
+          scene.add(showcaseGroup);
+        }
       }
       if (hitTestSource && referenceSpace) {
         const results = frame.getHitTestResults(hitTestSource);
@@ -578,6 +561,14 @@ export async function enterAR({
   });
 
   return session;
+}
+
+function immersiveSessionError(error) {
+  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+    return new Error("The XR viewer denied camera passthrough. Allow camera/motion access for this site and start AR from its immersive browser, not a regular web tab.");
+  }
+  const details = error?.message ? ` ${error.message}` : "";
+  return new Error(`Could not start immersive AR.${details} Check this viewer's WebXR and camera permissions, then try again.`);
 }
 
 function throwCameraError(error) {

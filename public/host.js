@@ -20,6 +20,8 @@ const statusElement = document.querySelector("#connection-status");
 const errorElement = document.querySelector("#host-error");
 const copyButton = document.querySelector("#copy-code");
 const startButton = document.querySelector("#start-session");
+const durationLabel = document.querySelector("#round-duration-label");
+const durationSelect = document.querySelector("#round-duration");
 const sessionErrorElement = document.querySelector("#session-error");
 
 let roomCode;
@@ -75,6 +77,7 @@ function renderRoom(room) {
   promptPanel.hidden = room.phase === "lobby";
   completeElement.hidden = room.phase !== "complete";
   startButton.hidden = room.phase !== "lobby";
+  durationLabel.hidden = room.phase !== "lobby";
   startButton.disabled = false;
   updateRoundTimer();
   if (room.phase === "complete" && renderedResultsCode !== room.code && loadingResultsCode !== room.code) {
@@ -145,6 +148,7 @@ createButton.addEventListener("click", async () => {
     createButton.hidden = true;
     copyButton.disabled = false;
     startButton.hidden = false;
+    durationLabel.hidden = false;
     connectToRoom();
   } catch (error) {
     showError(error.message);
@@ -158,12 +162,15 @@ startButton.addEventListener("click", async () => {
   try {
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/start`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ durationMinutes: Number(durationSelect.value) }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Could not start the session.");
     promptElement.textContent = result.prompt;
     promptPanel.hidden = false;
     startButton.hidden = true;
+    durationLabel.hidden = true;
     timerEndsAt = result.timerEndsAt;
     updateRoundTimer();
   } catch (error) {

@@ -21,16 +21,13 @@ export async function renderShowcase(canvas, contributions, playerList) {
   scene.add(keyLight);
 
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
+    new THREE.PlaneGeometry(500, 500),
     new THREE.MeshStandardMaterial({ color: 0xe8e3d8, roughness: 0.9 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.02;
   scene.add(floor);
 
-  const entries = contributions.flatMap((contribution) =>
-    contribution.objects.map((object) => ({ ...object, playerName: contribution.playerName })),
-  );
   if (playerList) {
     playerList.replaceChildren();
     if (!contributions.length) {
@@ -45,37 +42,56 @@ export async function renderShowcase(canvas, contributions, playerList) {
     }
   }
 
-  if (entries.length) {
-    const columns = Math.min(4, Math.ceil(Math.sqrt(entries.length)));
-    const rows = Math.ceil(entries.length / columns);
-    const spacing = 1.7;
-    const loader = new GLTFLoader();
-    const loadingModels = new Map();
-    const loadModel = (index) => {
-      if (!loadingModels.has(index)) {
-        loadingModels.set(index, loader.loadAsync(
-          `/ar-assets/glbs/${encodeURIComponent(modelFiles[index])}`,
-        ));
-      }
-      return loadingModels.get(index);
-    };
-    await Promise.all(entries.map(async (entry, index) => {
+  const loader = new GLTFLoader();
+  const loadingModels = new Map();
+  const loadModel = (index) => {
+    if (!loadingModels.has(index)) {
+      loadingModels.set(index, loader.loadAsync(
+        `/ar-assets/glbs/${encodeURIComponent(modelFiles[index])}`,
+      ));
+    }
+    return loadingModels.get(index);
+  };
+  const columns = Math.max(1, Math.ceil(Math.sqrt(contributions.length)));
+  const rows = Math.max(1, Math.ceil(contributions.length / columns));
+  const playerSpacing = 4.5;
+  for (let playerIndex = 0; playerIndex < contributions.length; playerIndex += 1) {
+    const contribution = contributions[playerIndex];
+    const playerGroup = new THREE.Group();
+    await Promise.all(contribution.objects.map(async (entry, objectIndex) => {
       if (!Number.isInteger(entry.modelIndex) || !modelScales[entry.modelIndex]) {
         throw new Error("A saved object uses an unknown furniture model.");
       }
       const gltf = await loadModel(entry.modelIndex);
       const object = gltf.scene.clone(true);
       object.scale.setScalar(modelScales[entry.modelIndex] * entry.scale);
-      object.position.set(
-        (index % columns - (columns - 1) / 2) * spacing,
-        0,
-        (Math.floor(index / columns) - (rows - 1) / 2) * spacing,
-      );
-      group.add(object);
+      if (Array.isArray(entry.position) && Array.isArray(entry.quaternion)) {
+        object.position.fromArray(entry.position);
+        object.quaternion.fromArray(entry.quaternion).normalize();
+      } else {
+        object.position.set(objectIndex * 1.25, 0, 0);
+      }
+      playerGroup.add(object);
     }));
-    const gridWidth = Math.max(1, columns - 1) * spacing;
-    camera.position.set(0, Math.max(2.6, rows * 0.7), Math.max(5, gridWidth * 0.85));
-    camera.lookAt(0, 0.6, 0);
+    playerGroup.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(playerGroup);
+    if (!bounds.isEmpty()) {
+      const center = bounds.getCenter(new THREE.Vector3());
+      const targetX = (playerIndex % columns - (columns - 1) / 2) * playerSpacing;
+      const targetZ = (Math.floor(playerIndex / columns) - (rows - 1) / 2) * playerSpacing;
+      playerGroup.position.set(targetX - center.x, -bounds.min.y, targetZ - center.z);
+    }
+    group.add(playerGroup);
+  }
+  group.updateMatrixWorld(true);
+  const sceneBounds = new THREE.Box3().setFromObject(group);
+  if (!sceneBounds.isEmpty()) {
+    const center = sceneBounds.getCenter(new THREE.Vector3());
+    const size = sceneBounds.getSize(new THREE.Vector3());
+    const distance = Math.max(5, size.x * 0.9, size.y * 1.5, size.z * 1.1);
+    camera.position.set(center.x + distance * 0.2, center.y + distance * 0.45, center.z + distance);
+    camera.lookAt(center);
+    floor.position.set(center.x, sceneBounds.min.y - 0.02, center.z);
   }
 
   let width = 0;

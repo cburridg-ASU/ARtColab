@@ -315,6 +315,27 @@ h1 span {
   background: #f5f2e9;
 }
 
+.round-duration {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 15px;
+  color: #706e68;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.round-duration select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #ded9cf;
+  border-radius: 8px;
+  background: #fffdf8;
+  color: #25241f;
+  font: inherit;
+}
+
 .prompt-panel .eyebrow {
   margin-bottom: 7px;
 }

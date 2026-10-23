@@ -10,7 +10,7 @@ const { WebSocket, WebSocketServer } = require("ws");
 const publicDirectory = path.join(__dirname, "public");
 const roomCodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomLifetime = 2 * 60 * 60 * 1000;
-const roundDurationMs = Number(process.env.ROUND_DURATION_MS) || 5 * 60 * 1000;
+const testRoundDurationMs = Number(process.env.ROUND_DURATION_MS) || null;
 const maxRequestBytes = 4096;
 const vendorFiles = {
   "/vendor/three.core.js": path.join(__dirname, "node_modules", "three", "build", "three.core.js"),
@@ -62,6 +62,7 @@ function getRoomSnapshot(room) {
     prompt: room.prompt,
     phase: room.phase,
     timerEndsAt: room.timerEndsAt,
+    durationMinutes: room.durationMinutes,
     players: Array.from(room.players.values(), ({ id, name, connected }) => ({
       id,
       name,
@@ -181,6 +182,7 @@ const server = http.createServer(async (request, response) => {
           code,
           prompt: "Build something unexpected.",
           phase: "lobby",
+          durationMinutes: null,
           timerEndsAt: null,
           roundTimer: null,
           players: new Map(),
@@ -302,7 +304,14 @@ const server = http.createServer(async (request, response) => {
         object.modelIndex < 6 &&
         Number.isFinite(object.scale) &&
         object.scale >= 0.35 &&
-        object.scale <= 3
+        object.scale <= 3 &&
+        Array.isArray(object.position) &&
+        object.position.length === 3 &&
+        object.position.every((value) => Number.isFinite(value) && Math.abs(value) <= 100) &&
+        Array.isArray(object.quaternion) &&
+        object.quaternion.length === 4 &&
+        object.quaternion.every((value) => Number.isFinite(value) && Math.abs(value) <= 1) &&
+        Math.abs(Math.hypot(...object.quaternion) - 1) < 0.1
       );
       if (!objectsAreValid) {
         sendJson(response, 400, { error: "The placement data is invalid." });
@@ -356,12 +365,26 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (room.phase === "lobby") {
-      const timerEndsAt = Date.now() + roundDurationMs;
+      let body;
+      try {
+        body = await readJsonBody(request);
+      } catch (error) {
+        const statusCode = error.statusCode || 500;
+        sendJson(response, statusCode, { error: error.message });
+        return;
+      }
+      const durationMinutes = body.durationMinutes;
+      if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 10) {
+        sendJson(response, 400, { error: "Choose a round length from 1 to 10 minutes." });
+        return;
+      }
+      const durationMs = testRoundDurationMs || durationMinutes * 60 * 1000;
+      const timerEndsAt = Date.now() + durationMs;
       if (roundStore) {
         try {
           await roundStore.query(
-            "UPDATE rounds SET phase = $2, timer_ends_at = $3 WHERE code = $1",
-            [code, "active", timerEndsAt],
+            "UPDATE rounds SET phase = $2, timer_ends_at = $3, duration_minutes = $4 WHERE code = $1",
+            [code, "active", timerEndsAt, durationMinutes],
           );
         } catch (error) {
           console.error("Unable to start the stored round:", error);
@@ -370,6 +393,7 @@ const server = http.createServer(async (request, response) => {
         }
       }
       room.phase = "active";
+      room.durationMinutes = durationMinutes;
       room.timerEndsAt = timerEndsAt;
       room.roundTimer = setTimeout(async () => {
         if (room.phase !== "active") return;
@@ -386,7 +410,7 @@ const server = http.createServer(async (request, response) => {
         room.phase = "complete";
         room.roundTimer = null;
         broadcastRoom(room);
-      }, roundDurationMs);
+      }, durationMs);
       room.roundTimer.unref();
       broadcastRoom(room);
     }
@@ -395,6 +419,7 @@ const server = http.createServer(async (request, response) => {
       phase: room.phase,
       prompt: room.prompt,
       timerEndsAt: room.timerEndsAt,
+      durationMinutes: room.durationMinutes,
     });
     return;
   }
@@ -592,9 +617,13 @@ async function initializeRoundStore() {
       timer_ends_at BIGINT,
       created_at BIGINT NOT NULL,
       completed_at BIGINT,
+      duration_minutes INTEGER,
       contributions JSONB NOT NULL DEFAULT '[]'::jsonb
     )
   `);
+  await roundStore.query(
+    "ALTER TABLE rounds ADD COLUMN IF NOT EXISTS duration_minutes INTEGER",
+  );
   await roundStore.query(
     "UPDATE rounds SET phase = 'complete', completed_at = COALESCE(completed_at, $1) WHERE phase = 'active'",
     [Date.now()],

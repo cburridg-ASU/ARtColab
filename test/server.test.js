@@ -1,7 +1,6 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
-const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const { after, before, test } = require("node:test");
@@ -120,6 +119,8 @@ test("serves host and player screens", async () => {
   assert.equal(hostResponse.status, 200);
   assert.match(hostPage, /id="create-room"/);
   assert.match(hostPage, /id="start-session"/);
+  assert.match(hostPage, /id="round-duration"/);
+  assert.match(hostPage, /<option value="10">10 minutes<\/option>/);
   assert.match(hostPage, /id="round-timer"/);
   assert.match(hostPage, /id="round-complete"/);
   assert.match(hostPage, /id="host-showcase"/);
@@ -253,7 +254,6 @@ test("rejects unsupported methods", async () => {
 });
 
 test("creates rooms, validates joins, and broadcasts connected players", async (context) => {
-  assert.match(fs.readFileSync(path.join(projectDirectory, "server.js"), "utf8"), /5 \* 60 \* 1000/);
   const createResponse = await fetch(`${baseUrl}/api/rooms`, { method: "POST" });
   const room = await createResponse.json();
   assert.equal(createResponse.status, 201);
@@ -355,8 +355,16 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     (message) => message.type === "room" && message.phase === "active",
   );
   const startRequestedAt = Date.now();
+  const invalidDuration = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ durationMinutes: 11 }),
+  });
+  assert.equal(invalidDuration.status, 400);
   const startResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ durationMinutes: 7 }),
   });
   const started = await startResponse.json();
   const activeRoom = await activeRoomPromise;
@@ -365,6 +373,8 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.equal(started.prompt, room.prompt);
   assert.ok(started.timerEndsAt >= startRequestedAt + 1_400);
   assert.ok(started.timerEndsAt <= Date.now() + 1_500);
+  assert.equal(started.durationMinutes, 7);
+  assert.equal(activeRoom.durationMinutes, 7);
   assert.equal(activeRoom.prompt, room.prompt);
   assert.equal(activeRoom.timerEndsAt, started.timerEndsAt);
   assert.equal((await activePlayerRoomPromise).phase, "active");
@@ -380,7 +390,12 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       playerId: player.playerId,
-      objects: [{ modelIndex: 0, scale: 1.25 }],
+      objects: [{
+        modelIndex: 0,
+        scale: 1.25,
+        position: [1.25, 0.5, -2],
+        quaternion: [0, 0.7071068, 0, 0.7071068],
+      }],
     }),
   });
   assert.equal(saveResponse.status, 200);
@@ -389,7 +404,12 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       playerId: player.playerId,
-      objects: [{ modelIndex: 99, scale: 1 }],
+      objects: [{
+        modelIndex: 99,
+        scale: 1,
+        position: [0, 0, 0],
+        quaternion: [0, 0, 0, 1],
+      }],
     }),
   });
   assert.equal(invalidSave.status, 400);
@@ -418,7 +438,12 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.deepEqual(result.contributions, [{
     playerId: player.playerId,
     playerName: "Alex",
-    objects: [{ modelIndex: 0, scale: 1.25 }],
+    objects: [{
+      modelIndex: 0,
+      scale: 1.25,
+      position: [1.25, 0.5, -2],
+      quaternion: [0, 0.7071068, 0, 0.7071068],
+    }],
   }]);
 
   const disconnectedRoomPromise = waitForMessage(

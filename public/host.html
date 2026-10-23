@@ -24,6 +24,21 @@
           <img class="room-qr" id="room-qr" alt="Scan to join this game" hidden>
           <p class="join-instruction">On your phone, go to <a id="join-url" href="/join">/join</a></p>
           <button class="secondary-button copy-button" id="copy-code" type="button" disabled>Copy room code</button>
+          <label class="round-duration" id="round-duration-label" for="round-duration" hidden>
+            Round length
+            <select id="round-duration" name="durationMinutes">
+              <option value="1">1 minute</option>
+              <option value="2">2 minutes</option>
+              <option value="3">3 minutes</option>
+              <option value="4">4 minutes</option>
+              <option value="5" selected>5 minutes</option>
+              <option value="6">6 minutes</option>
+              <option value="7">7 minutes</option>
+              <option value="8">8 minutes</option>
+              <option value="9">9 minutes</option>
+              <option value="10">10 minutes</option>
+            </select>
+          </label>
           <p class="error-message" id="host-error" role="alert" hidden></p>
         </div>
         <div class="prompt-panel" id="prompt-panel" hidden>
@@ -34,7 +49,7 @@
         <p class="round-complete" id="round-complete" role="status" hidden>Time’s up!</p>
         <section class="showcase-panel" id="host-showcase-panel" aria-labelledby="host-showcase-title" hidden>
           <h2 id="host-showcase-title">Everyone’s creation</h2>
-          <p class="showcase-caption">Drag to spin the scene. Scroll to zoom.</p>
+          <p class="showcase-caption">Each player’s arrangement is preserved. Drag to spin; scroll to zoom.</p>
           <canvas class="showcase-canvas" id="host-showcase" aria-label="Combined 3D showcase"></canvas>
           <ul class="showcase-players" id="host-showcase-players"></ul>
           <div class="showcase-revisit">
