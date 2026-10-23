@@ -305,8 +305,6 @@ export async function enterAR({
 
   async function createShowcaseGroup() {
     const group = new THREE.Group();
-    const columns = Math.max(1, Math.ceil(Math.sqrt(contributions.length)));
-    const spacing = 4.5;
     for (let playerIndex = 0; playerIndex < contributions.length; playerIndex += 1) {
       const contribution = contributions[playerIndex];
       const playerGroup = new THREE.Group();
@@ -326,10 +324,10 @@ export async function enterAR({
       }
       playerGroup.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(playerGroup);
-      const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
-      const targetX = (playerIndex % columns - (columns - 1) / 2) * spacing;
-      const targetZ = (Math.floor(playerIndex / columns) - (Math.ceil(contributions.length / columns) - 1) / 2) * spacing;
-      playerGroup.position.set(targetX - center.x, -bounds.min.y, targetZ - center.z);
+      if (!bounds.isEmpty()) {
+        const center = bounds.getCenter(new THREE.Vector3());
+        playerGroup.position.set(-center.x, -bounds.min.y, -center.z);
+      }
       group.add(playerGroup);
     }
     return group;
@@ -367,6 +365,27 @@ export async function enterAR({
   }
 
   const onCatalogClick = (event) => {
+    if (event.detail !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedModel(Number(event.currentTarget.dataset.modelIndex));
+  };
+  const catalogPointerStarts = new Map();
+  const onCatalogPointerDown = (event) => {
+    catalogPointerStarts.set(event.pointerId, {
+      button: event.currentTarget,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+  const onCatalogPointerUp = (event) => {
+    const start = catalogPointerStarts.get(event.pointerId);
+    catalogPointerStarts.delete(event.pointerId);
+    if (
+      !start ||
+      start.button !== event.currentTarget ||
+      Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10
+    ) return;
     event.preventDefault();
     event.stopPropagation();
     setSelectedModel(Number(event.currentTarget.dataset.modelIndex));
@@ -403,6 +422,9 @@ export async function enterAR({
   }
   for (const button of catalogButtons) {
     button.addEventListener("click", onCatalogClick);
+    button.addEventListener("pointerdown", onCatalogPointerDown);
+    button.addEventListener("pointerup", onCatalogPointerUp);
+    button.addEventListener("pointercancel", onEndDrag);
   }
   addButton.addEventListener("click", onPlaceClick);
   scaleDownButton.addEventListener("click", onScaleDown);
@@ -434,6 +456,9 @@ export async function enterAR({
     }
     for (const button of catalogButtons) {
       button.removeEventListener("click", onCatalogClick);
+      button.removeEventListener("pointerdown", onCatalogPointerDown);
+      button.removeEventListener("pointerup", onCatalogPointerUp);
+      button.removeEventListener("pointercancel", onEndDrag);
     }
     addButton.removeEventListener("click", onPlaceClick);
     scaleDownButton.removeEventListener("click", onScaleDown);

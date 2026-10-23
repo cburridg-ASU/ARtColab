@@ -52,9 +52,6 @@ export async function renderShowcase(canvas, contributions, playerList) {
     }
     return loadingModels.get(index);
   };
-  const columns = Math.max(1, Math.ceil(Math.sqrt(contributions.length)));
-  const rows = Math.max(1, Math.ceil(contributions.length / columns));
-  const playerSpacing = 4.5;
   for (let playerIndex = 0; playerIndex < contributions.length; playerIndex += 1) {
     const contribution = contributions[playerIndex];
     const playerGroup = new THREE.Group();
@@ -77,9 +74,7 @@ export async function renderShowcase(canvas, contributions, playerList) {
     const bounds = new THREE.Box3().setFromObject(playerGroup);
     if (!bounds.isEmpty()) {
       const center = bounds.getCenter(new THREE.Vector3());
-      const targetX = (playerIndex % columns - (columns - 1) / 2) * playerSpacing;
-      const targetZ = (Math.floor(playerIndex / columns) - (rows - 1) / 2) * playerSpacing;
-      playerGroup.position.set(targetX - center.x, -bounds.min.y, targetZ - center.z);
+      playerGroup.position.set(-center.x, -bounds.min.y, -center.z);
     }
     group.add(playerGroup);
   }

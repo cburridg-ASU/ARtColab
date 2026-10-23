@@ -151,6 +151,7 @@ test("serves the combined showcase module", async () => {
   assert.equal(response.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(module, /export async function renderShowcase/);
   assert.match(module, /GLTFLoader/);
+  assert.match(module, /playerGroup\.position\.set\(-center\.x, -bounds\.min\.y, -center\.z\)/);
 });
 
 test("serves the AR module and Three.js runtime", async () => {
@@ -199,6 +200,8 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /getHitTestResults/);
   assert.match(arModule, /selectstart/);
   assert.match(arModule, /scaleSelected/);
+  assert.match(arModule, /playerGroup\.position\.set\(-center\.x, -bounds\.min\.y, -center\.z\)/);
+  assert.match(arModule, /button\.addEventListener\("pointerup", onCatalogPointerUp\)/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
   assert.equal(threeCoreResponse.status, 200);

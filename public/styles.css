@@ -653,6 +653,8 @@ h1 span {
 }
 
 .ar-hud {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -717,6 +719,7 @@ h1 span {
 
 .ar-catalog {
   position: absolute;
+  z-index: 2;
   right: 0;
   bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
   left: 0;
@@ -750,6 +753,7 @@ h1 span {
   font-weight: 600;
   cursor: pointer;
   touch-action: manipulation;
+  pointer-events: auto;
 }
 
 .ar-item.is-selected {
@@ -766,6 +770,7 @@ h1 span {
 
 .ar-controls {
   position: absolute;
+  z-index: 2;
   right: 0;
   bottom: max(82px, calc(env(safe-area-inset-bottom) + 72px));
   left: 0;
