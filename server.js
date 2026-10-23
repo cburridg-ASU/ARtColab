@@ -4,12 +4,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { URL } = require("node:url");
 const QRCode = require("qrcode");
+const { Pool } = require("pg");
 const { WebSocket, WebSocketServer } = require("ws");
 
 const publicDirectory = path.join(__dirname, "public");
 const roomCodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const roomLifetime = 2 * 60 * 60 * 1000;
-const roundDurationMs = 30 * 1000;
+const roundDurationMs = Number(process.env.ROUND_DURATION_MS) || 5 * 60 * 1000;
 const maxRequestBytes = 4096;
 const vendorFiles = {
   "/vendor/three.core.js": path.join(__dirname, "node_modules", "three", "build", "three.core.js"),
@@ -27,6 +28,9 @@ const contentTypes = {
   ".svg": "image/svg+xml",
 };
 const rooms = new Map();
+const roundStore = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL })
+  : null;
 
 function sendJson(response, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -38,13 +42,16 @@ function sendJson(response, statusCode, payload) {
   response.end(body);
 }
 
-function createRoomCode() {
+async function createRoomCode() {
   let code;
   do {
     code = Array.from({ length: 6 }, () =>
       roomCodeCharacters[crypto.randomInt(roomCodeCharacters.length)],
     ).join("");
-  } while (rooms.has(code));
+  } while (
+    rooms.has(code) ||
+    (roundStore && (await roundStore.query("SELECT 1 FROM rounds WHERE code = $1", [code])).rowCount)
+  );
   return code;
 }
 
@@ -169,7 +176,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readJsonBody(request);
       if (pathname === "/api/rooms") {
-        const code = createRoomCode();
+        const code = await createRoomCode();
         const room = {
           code,
           prompt: "Build something unexpected.",
@@ -177,9 +184,16 @@ const server = http.createServer(async (request, response) => {
           timerEndsAt: null,
           roundTimer: null,
           players: new Map(),
+          contributions: new Map(),
           clients: new Set(),
           createdAt: Date.now(),
         };
+        if (roundStore) {
+          await roundStore.query(
+            "INSERT INTO rounds (code, prompt, phase, created_at) VALUES ($1, $2, $3, $4)",
+            [code, room.prompt, room.phase, room.createdAt],
+          );
+        }
         rooms.set(code, room);
         sendJson(response, 201, { code, prompt: room.prompt });
         return;
@@ -214,6 +228,118 @@ const server = http.createServer(async (request, response) => {
     }
   }
 
+  const resultMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/(results|contributions)$/);
+  if (resultMatch) {
+    const code = resultMatch[1].toUpperCase();
+    const room = rooms.get(code);
+    if (resultMatch[2] === "results") {
+      if (request.method !== "GET") {
+        response.writeHead(405, { Allow: "GET" });
+        response.end("Method Not Allowed");
+        return;
+      }
+      let result;
+      try {
+        if (roundStore) {
+          const { rows } = await roundStore.query(
+            "SELECT code, prompt, phase, contributions FROM rounds WHERE code = $1",
+            [code],
+          );
+          result = rows[0];
+        } else if (room) {
+          result = {
+            code: room.code,
+            prompt: room.prompt,
+            phase: room.phase,
+            contributions: Array.from(room.contributions.values()),
+          };
+        }
+      } catch (error) {
+        console.error("Unable to load round results:", error);
+        sendJson(response, 500, { error: "Unable to load round results." });
+        return;
+      }
+      if (!result) {
+        sendJson(response, 404, { error: "Round results not found." });
+        return;
+      }
+      if (result.phase !== "complete") {
+        sendJson(response, 409, { error: "Round results are not ready yet." });
+        return;
+      }
+      sendJson(response, 200, {
+        code: result.code,
+        prompt: result.prompt,
+        contributions: result.contributions || [],
+      });
+      return;
+    }
+
+    if (request.method !== "POST") {
+      response.writeHead(405, { Allow: "POST" });
+      response.end("Method Not Allowed");
+      return;
+    }
+    if (!room || (room.phase !== "active" && room.phase !== "complete")) {
+      sendJson(response, 404, { error: "This room is not accepting object saves." });
+      return;
+    }
+    try {
+      const body = await readJsonBody(request);
+      const player = room.players.get(body.playerId);
+      if (!player) {
+        sendJson(response, 403, { error: "Player is not part of this room." });
+        return;
+      }
+      if (!Array.isArray(body.objects) || body.objects.length > 24) {
+        sendJson(response, 400, { error: "Send up to 24 placed objects." });
+        return;
+      }
+      const objectsAreValid = body.objects.every((object) =>
+        object &&
+        Number.isInteger(object.modelIndex) &&
+        object.modelIndex >= 0 &&
+        object.modelIndex < 6 &&
+        Number.isFinite(object.scale) &&
+        object.scale >= 0.35 &&
+        object.scale <= 3
+      );
+      if (!objectsAreValid) {
+        sendJson(response, 400, { error: "The placement data is invalid." });
+        return;
+      }
+      const contribution = {
+        playerId: player.id,
+        playerName: player.name,
+        objects: body.objects,
+      };
+      if (roundStore) {
+        await roundStore.query(
+          `UPDATE rounds
+           SET contributions =
+             COALESCE(
+               (SELECT jsonb_agg(item.value)
+                FROM jsonb_array_elements(rounds.contributions) AS item(value)
+                WHERE item.value->>'playerId' <> $2),
+               '[]'::jsonb
+             ) || jsonb_build_array($3::jsonb)
+           WHERE code = $1`,
+          [code, player.id, JSON.stringify(contribution)],
+        );
+      }
+      room.contributions.set(player.id, contribution);
+      sendJson(response, 200, { saved: true });
+    } catch (error) {
+      if (response.headersSent || response.destroyed) return;
+      const statusCode = error.statusCode || 500;
+      if (statusCode === 500) console.error("Unable to save player placements:", error);
+      sendJson(response, statusCode, {
+        error: statusCode === 500 ? "Unable to save the placements." : error.message,
+      });
+    }
+    return;
+  }
+
   const startRoomMatch = pathname.match(/^\/api\/rooms\/([^/]+)\/start$/);
   if (startRoomMatch) {
     if (request.method !== "POST") {
@@ -230,10 +356,33 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (room.phase === "lobby") {
+      const timerEndsAt = Date.now() + roundDurationMs;
+      if (roundStore) {
+        try {
+          await roundStore.query(
+            "UPDATE rounds SET phase = $2, timer_ends_at = $3 WHERE code = $1",
+            [code, "active", timerEndsAt],
+          );
+        } catch (error) {
+          console.error("Unable to start the stored round:", error);
+          sendJson(response, 500, { error: "Unable to start the round." });
+          return;
+        }
+      }
       room.phase = "active";
-      room.timerEndsAt = Date.now() + roundDurationMs;
-      room.roundTimer = setTimeout(() => {
+      room.timerEndsAt = timerEndsAt;
+      room.roundTimer = setTimeout(async () => {
         if (room.phase !== "active") return;
+        if (roundStore) {
+          try {
+            await roundStore.query(
+              "UPDATE rounds SET phase = $2, completed_at = $3 WHERE code = $1",
+              [code, "complete", Date.now()],
+            );
+          } catch (error) {
+            console.error("Unable to save round completion:", error);
+          }
+        }
         room.phase = "complete";
         room.roundTimer = null;
         broadcastRoom(room);
@@ -430,7 +579,35 @@ const cleanup = setInterval(() => {
 }, 60000);
 cleanup.unref();
 
+async function initializeRoundStore() {
+  if (!roundStore) {
+    console.warn("DATABASE_URL is not configured; completed rounds will not survive server restarts.");
+    return;
+  }
+  await roundStore.query(`
+    CREATE TABLE IF NOT EXISTS rounds (
+      code CHAR(6) PRIMARY KEY,
+      prompt TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      timer_ends_at BIGINT,
+      created_at BIGINT NOT NULL,
+      completed_at BIGINT,
+      contributions JSONB NOT NULL DEFAULT '[]'::jsonb
+    )
+  `);
+  await roundStore.query(
+    "UPDATE rounds SET phase = 'complete', completed_at = COALESCE(completed_at, $1) WHERE phase = 'active'",
+    [Date.now()],
+  );
+}
+
 const port = Number(process.env.PORT) || 3000;
-server.listen(port, "0.0.0.0", () => {
-  console.log(`ARtColab is running on port ${port}`);
+initializeRoundStore().then(() => {
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`ARtColab is running on port ${port}`);
+  });
+}).catch((error) => {
+  console.error("Unable to initialize round storage:", error);
+  process.exitCode = 1;
+  server.close();
 });

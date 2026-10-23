@@ -24,7 +24,7 @@
           <button class="primary-button" type="submit">Join game <span aria-hidden="true">→</span></button>
           <p class="error-message" id="join-error" role="alert" hidden></p>
         </form>
-        <div class="joined-panel" id="joined-panel">
+        <div class="joined-panel" id="joined-panel" hidden>
           <p class="eyebrow">YOU’RE IN</p>
           <p class="joined-name" id="joined-name"></p>
           <p class="joined-message">Look up at the big screen. You’re waiting with the group.</p>
@@ -39,6 +39,15 @@
           <button class="primary-button" id="enter-ar" type="button">Enter AR <span aria-hidden="true">→</span></button>
           <button class="secondary-button" id="camera-preview" type="button" hidden>Use camera preview (no room tracking)</button>
           <p class="error-message" id="ar-error" role="alert" hidden></p>
+        </section>
+        <section class="mobile-result-panel" id="mobile-result-panel" aria-labelledby="mobile-result-title" hidden>
+          <p class="eyebrow">ROUND COMPLETE</p>
+          <h2 class="mobile-prompt" id="mobile-result-title">Everyone’s creation</h2>
+          <p class="showcase-caption">Drag to spin. Pinch or scroll to zoom.</p>
+          <canvas class="showcase-canvas mobile-showcase-canvas" id="mobile-showcase" aria-label="Combined 3D showcase"></canvas>
+          <ul class="showcase-players" id="mobile-showcase-players"></ul>
+          <button class="primary-button" id="view-showcase-ar" type="button">View combined scene in AR</button>
+          <p class="error-message" id="result-error" role="alert" hidden></p>
         </section>
       </section>
       <section class="ar-overlay" id="ar-overlay" aria-label="AR creation space" hidden>

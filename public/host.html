@@ -32,6 +32,16 @@
           <p class="round-timer" id="round-timer" role="timer" aria-live="off" hidden></p>
         </div>
         <p class="round-complete" id="round-complete" role="status" hidden>Time’s up!</p>
+        <section class="showcase-panel" id="host-showcase-panel" aria-labelledby="host-showcase-title" hidden>
+          <h2 id="host-showcase-title">Everyone’s creation</h2>
+          <p class="showcase-caption">Drag to spin the scene. Scroll to zoom.</p>
+          <canvas class="showcase-canvas" id="host-showcase" aria-label="Combined 3D showcase"></canvas>
+          <ul class="showcase-players" id="host-showcase-players"></ul>
+          <div class="showcase-revisit">
+            <img id="host-results-qr" alt="Scan to reopen this result on a phone" hidden>
+            <p><a id="host-results-link" href="/join">Open this showcase on a phone</a></p>
+          </div>
+        </section>
         <section class="players-panel" aria-labelledby="players-title">
           <div class="players-heading"><h2 id="players-title">Players</h2><span id="player-summary">Waiting for friends</span></div>
           <ul class="player-list" id="player-list"><li class="empty-state">Your friends will show up here.</li></ul>
@@ -42,6 +52,13 @@
       </section>
       <footer><a href="/">← Back to ARtColab</a><span>Connectivity test</span></footer>
     </main>
-    <script src="/host.js" defer></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three.module.js"
+        }
+      }
+    </script>
+    <script type="module" src="/host.js"></script>
   </body>
 </html>

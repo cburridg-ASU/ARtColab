@@ -1,3 +1,5 @@
+import { renderShowcase } from "/showcase.js";
+
 const createButton = document.querySelector("#create-room");
 const codeElement = document.querySelector("#room-code");
 const countElement = document.querySelector("#player-count");
@@ -7,6 +9,11 @@ const promptElement = document.querySelector("#prompt");
 const promptPanel = document.querySelector("#prompt-panel");
 const timerElement = document.querySelector("#round-timer");
 const completeElement = document.querySelector("#round-complete");
+const showcasePanel = document.querySelector("#host-showcase-panel");
+const showcaseCanvas = document.querySelector("#host-showcase");
+const showcasePlayers = document.querySelector("#host-showcase-players");
+const resultsLink = document.querySelector("#host-results-link");
+const resultsQr = document.querySelector("#host-results-qr");
 const playerList = document.querySelector("#player-list");
 const summaryElement = document.querySelector("#player-summary");
 const statusElement = document.querySelector("#connection-status");
@@ -17,6 +24,8 @@ const sessionErrorElement = document.querySelector("#session-error");
 
 let roomCode;
 let timerEndsAt = null;
+let renderedResultsCode = null;
+let loadingResultsCode = null;
 
 function updateRoundTimer() {
   if (!timerEndsAt) {
@@ -38,7 +47,28 @@ function showError(message) {
   errorElement.hidden = false;
 }
 
+async function loadCompletedResults(code) {
+  try {
+    const response = await fetch(`/api/rooms/${encodeURIComponent(code)}/results`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not load the finished round.");
+    showcasePanel.hidden = false;
+    const resultUrl = `/join?code=${encodeURIComponent(code)}`;
+    resultsLink.href = resultUrl;
+    resultsQr.src = `/api/rooms/${encodeURIComponent(code)}/qr`;
+    resultsQr.hidden = false;
+    await renderShowcase(showcaseCanvas, result.contributions, showcasePlayers);
+    renderedResultsCode = code;
+  } catch (error) {
+    sessionErrorElement.textContent = error.message;
+    sessionErrorElement.hidden = false;
+  } finally {
+    loadingResultsCode = null;
+  }
+}
+
 function renderRoom(room) {
+  document.querySelector(".game-content").classList.toggle("is-showcasing", room.phase === "complete");
   codeElement.textContent = room.code;
   promptElement.textContent = room.prompt;
   timerEndsAt = room.timerEndsAt || null;
@@ -47,6 +77,10 @@ function renderRoom(room) {
   startButton.hidden = room.phase !== "lobby";
   startButton.disabled = false;
   updateRoundTimer();
+  if (room.phase === "complete" && renderedResultsCode !== room.code && loadingResultsCode !== room.code) {
+    loadingResultsCode = room.code;
+    loadCompletedResults(room.code);
+  }
   const connectedPlayers = room.players.filter((player) => player.connected);
   countElement.textContent = `${connectedPlayers.length} ${connectedPlayers.length === 1 ? "PLAYER" : "PLAYERS"}`;
   summaryElement.textContent = room.players.length

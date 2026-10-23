@@ -1,4 +1,5 @@
 import { enterAR } from "/ar.js";
+import { renderShowcase } from "/showcase.js";
 
 const joinForm = document.querySelector("#join-form");
 const codeInput = document.querySelector("#room-code-input");
@@ -12,6 +13,11 @@ const mobilePrompt = document.querySelector("#mobile-prompt");
 const mobileTimerElement = document.querySelector("#mobile-round-timer");
 const arTimerElement = document.querySelector("#ar-round-timer");
 const mobileCompleteElement = document.querySelector("#mobile-round-complete");
+const mobileResultPanel = document.querySelector("#mobile-result-panel");
+const mobileShowcaseCanvas = document.querySelector("#mobile-showcase");
+const mobileShowcasePlayers = document.querySelector("#mobile-showcase-players");
+const viewShowcaseArButton = document.querySelector("#view-showcase-ar");
+const resultError = document.querySelector("#result-error");
 const enterArButton = document.querySelector("#enter-ar");
 const cameraPreviewButton = document.querySelector("#camera-preview");
 const arError = document.querySelector("#ar-error");
@@ -23,6 +29,11 @@ let playerId;
 let roomCode;
 let timerEndsAt = null;
 let roundComplete = false;
+let latestObjects = [];
+let savedContributions = [];
+let showcaseDisposer = null;
+let renderedResultsCode = null;
+let loadingResultsCode = null;
 
 function updateRoundTimer() {
   if (!timerEndsAt) return;
@@ -32,8 +43,26 @@ function updateRoundTimer() {
   arTimerElement.textContent = time;
 }
 
+async function restoreSavedResults(code) {
+  try {
+    const response = await fetch(`/api/rooms/${encodeURIComponent(code)}/results`);
+    if (response.status === 404 || response.status === 409) return;
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not load the saved showcase.");
+    roomCode = code;
+    joinForm.hidden = true;
+    await showRoundComplete(result.prompt, result);
+  } catch (error) {
+    errorElement.textContent = error.message;
+    errorElement.hidden = false;
+  }
+}
+
 const initialCode = new URLSearchParams(window.location.search).get("code");
-if (initialCode) codeInput.value = initialCode.toUpperCase().slice(0, 6);
+if (initialCode) {
+  codeInput.value = initialCode.toUpperCase().slice(0, 6);
+  restoreSavedResults(codeInput.value);
+}
 
 codeInput.addEventListener("input", () => {
   codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
@@ -93,38 +122,111 @@ function showActivePrompt(prompt) {
   cameraPreviewButton.hidden = true;
   joinedPanel.hidden = true;
   gamePanel.hidden = false;
+  mobileResultPanel.hidden = true;
 }
 
-function showRoundComplete(prompt) {
-  showActivePrompt(prompt);
+async function showRoundComplete(prompt, completedResult = null) {
+  if (renderedResultsCode === roomCode || loadingResultsCode === roomCode) return;
+  loadingResultsCode = roomCode;
   roundComplete = true;
-  mobileCompleteElement.hidden = false;
-  enterArButton.hidden = true;
-  cameraPreviewButton.hidden = true;
+  mobilePrompt.textContent = prompt;
+  arPrompt.textContent = prompt;
+  joinedPanel.hidden = true;
+  gamePanel.hidden = true;
+  mobileResultPanel.hidden = false;
   exitArButton.click();
+  resultError.hidden = true;
+  viewShowcaseArButton.disabled = true;
+  let saveWarning = "";
+  try {
+    try {
+      await saveObjects(latestObjects);
+    } catch (error) {
+      console.error("Could not save the final placements before showing results:", error);
+      saveWarning = "Some final placements may not have been saved. " + error.message;
+    }
+    let result = completedResult;
+    if (!result) {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/results`);
+      result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not load the finished round.");
+    }
+    savedContributions = result.contributions;
+    showcaseDisposer?.();
+    showcaseDisposer = await renderShowcase(
+      mobileShowcaseCanvas,
+      savedContributions,
+      mobileShowcasePlayers,
+    );
+    renderedResultsCode = roomCode;
+    viewShowcaseArButton.disabled = savedContributions.every((entry) => entry.objects.length === 0);
+    if (saveWarning) {
+      resultError.textContent = saveWarning;
+      resultError.hidden = false;
+    }
+  } catch (error) {
+    resultError.textContent = error.message;
+    resultError.hidden = false;
+  } finally {
+    loadingResultsCode = null;
+  }
 }
 
-async function startAR(mode) {
-  if (roundComplete) return;
+async function restoreShowcase() {
+  if (mobileResultPanel.hidden || !Array.isArray(savedContributions)) return;
+  try {
+    showcaseDisposer?.();
+    showcaseDisposer = await renderShowcase(
+      mobileShowcaseCanvas,
+      savedContributions,
+      mobileShowcasePlayers,
+    );
+    viewShowcaseArButton.disabled = savedContributions.every((entry) => entry.objects.length === 0);
+  } catch (error) {
+    resultError.textContent = error.message;
+    resultError.hidden = false;
+  }
+}
+
+async function startAR(mode, contributions = null) {
+  if (roundComplete && !contributions) return;
+  const isViewingShowcase = Array.isArray(contributions);
+  if (isViewingShowcase) {
+    viewShowcaseArButton.disabled = true;
+    showcaseDisposer?.();
+    showcaseDisposer = null;
+  }
   enterArButton.disabled = true;
   cameraPreviewButton.disabled = true;
   arError.hidden = true;
   try {
-    await enterAR({
+    const session = await enterAR({
       overlay: arOverlay,
       prompt: arPrompt.textContent,
       exitButton: exitArButton,
       mode,
+      contributions,
+      onObjectsChange: (objects) => {
+        latestObjects = objects;
+        return contributions ? undefined : saveObjects(objects);
+      },
     });
+    if (isViewingShowcase && session) {
+      session.addEventListener("end", () => restoreShowcase(), { once: true });
+    }
     arError.hidden = true;
     cameraPreviewButton.hidden = true;
     if (roundComplete) exitArButton.click();
   } catch (error) {
-    if (!roundComplete) {
+    if (roundComplete) {
+      resultError.textContent = error.message;
+      resultError.hidden = false;
+    } else {
       arError.textContent = error.message;
       arError.hidden = false;
       cameraPreviewButton.hidden = false;
     }
+    if (isViewingShowcase) await restoreShowcase();
   } finally {
     enterArButton.disabled = false;
     cameraPreviewButton.disabled = false;
@@ -133,8 +235,20 @@ async function startAR(mode) {
 
 enterArButton.addEventListener("click", () => startAR("immersive"));
 cameraPreviewButton.addEventListener("click", () => startAR("camera"));
+viewShowcaseArButton.addEventListener("click", () => startAR("immersive", savedContributions));
 
 window.setInterval(updateRoundTimer, 1000);
+
+async function saveObjects(objects) {
+  if (!roomCode || !playerId) return;
+  const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ playerId, objects }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Could not save your objects.");
+}
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();

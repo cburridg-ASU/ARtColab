@@ -213,6 +213,18 @@ h1 span {
   padding: 52px 0 60px;
 }
 
+.game-content.is-showcasing {
+  width: min(100%, 1100px);
+}
+
+.game-content.is-showcasing > .game-heading,
+.game-content.is-showcasing > .room-panel,
+.game-content.is-showcasing > .players-panel,
+.game-content.is-showcasing > #create-room,
+.game-content.is-showcasing > #start-session {
+  display: none;
+}
+
 .game-heading {
   margin-bottom: 30px;
 }
@@ -330,6 +342,82 @@ h1 span {
   font-family: "Space Grotesk", sans-serif;
   font-size: 1.15rem;
   font-weight: 700;
+}
+
+.showcase-panel,
+.mobile-result-panel {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid #e3dfd5;
+  border-radius: 10px;
+  background: #fffdf8;
+}
+
+.showcase-panel h2 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.showcase-caption {
+  margin: 7px 0 12px;
+  color: #706e68;
+  font-size: 0.78rem;
+}
+
+.showcase-canvas {
+  display: block;
+  width: 100%;
+  height: min(65vh, 680px);
+  min-height: 340px;
+  border-radius: 8px;
+  background: #f5f2e9;
+  touch-action: none;
+}
+
+.showcase-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 18px;
+  margin: 13px 0 0;
+  padding: 0;
+  color: #706e68;
+  font-size: 0.76rem;
+  list-style: none;
+}
+
+.showcase-revisit {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-top: 16px;
+}
+
+.showcase-revisit img {
+  width: 100px;
+  height: 100px;
+  border: 5px solid white;
+  border-radius: 6px;
+  background: white;
+}
+
+.showcase-revisit p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.showcase-revisit a {
+  color: #25241f;
+}
+
+.mobile-result-panel .primary-button {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.mobile-showcase-canvas {
+  height: 42vh;
+  min-height: 240px;
 }
 
 .players-heading h2 {
@@ -535,6 +623,12 @@ h1 span {
 
 .ar-overlay.is-active {
   display: block;
+}
+
+.ar-showcase-mode .ar-catalog,
+.ar-showcase-mode .ar-controls,
+.ar-showcase-mode .ar-hint {
+  display: none;
 }
 
 .ar-hud {
@@ -749,7 +843,9 @@ footer {
   .room-panel,
   .prompt-panel,
   .players-panel,
-  .mobile-game-panel {
+  .mobile-game-panel,
+  .showcase-panel,
+  .mobile-result-panel {
     padding: 17px;
   }
 

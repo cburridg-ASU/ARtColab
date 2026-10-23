@@ -10,8 +10,19 @@ const models = [
   { name: "Nesting tables", file: "elnaz_nesting_side_tables_brass__green_marble.glb", scale: 0.01 },
 ];
 
-export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" }) {
+export async function enterAR({
+  overlay,
+  prompt,
+  exitButton,
+  mode = "immersive",
+  contributions = null,
+  onObjectsChange = () => {},
+}) {
   const usingWebXR = mode === "immersive";
+  const isShowcaseMode = Array.isArray(contributions);
+  if (isShowcaseMode && !usingWebXR) {
+    throw new Error("The combined showcase in AR requires immersive WebXR.");
+  }
   let sessionRequest;
   let cameraStream;
   let cameraVideo;
@@ -100,6 +111,8 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   const dragOffset = new THREE.Vector3();
   const cameraDirection = new THREE.Vector3();
   const intersection = new THREE.Vector3();
+  let showcaseGroup = null;
+  let saveTimer = null;
   let selectedModelIndex = 0;
   let selectedObject = null;
   let hitTestSource = null;
@@ -170,6 +183,7 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
       scene.add(object);
       placedObjects.add(object);
       setSelectedObject(object);
+      scheduleObjectSave();
     } catch (error) {
       console.error(`Could not place AR model ${models[index].file}:`, error);
       controlsHint.textContent = `Could not place ${models[index].name}. Try again.`;
@@ -182,6 +196,7 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   }
 
   function startXRDrag() {
+    if (isShowcaseMode) return;
     const hits = getXRRay().intersectObjects(Array.from(placedObjects), true);
     if (!hits.length) {
       dragging = false;
@@ -197,6 +212,17 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
 
   function handleXRSelect() {
     if (dragging) return;
+    if (isShowcaseMode) {
+      if (!showcaseGroup) return;
+      if (reticle.visible) {
+        showcaseGroup.matrix.copy(reticle.matrix);
+        showcaseGroup.matrixAutoUpdate = false;
+        scene.add(showcaseGroup);
+      } else if (!hitTestSource) {
+        placeShowcaseInFrontOfViewer();
+      }
+      return;
+    }
     if (reticle.visible) {
       placeSelected(reticle.matrix);
     } else if (!hitTestSource) {
@@ -253,6 +279,7 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   }
 
   function scaleSelected(factor) {
+    if (isShowcaseMode) return;
     if (!selectedObject) {
       controlsHint.textContent = "Place an item first, then select it to resize.";
       return;
@@ -263,10 +290,77 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
       selectedObject.userData.arBaseScale * 3,
     );
     selectedObject.scale.setScalar(selectedObject.userData.arScale);
+    scheduleObjectSave();
+  }
+
+  function serializePlacedObjects() {
+    return Array.from(placedObjects, (object) => ({
+      modelIndex: object.userData.arModelIndex,
+      scale: object.userData.arScale / object.userData.arBaseScale,
+    }));
+  }
+
+  function scheduleObjectSave() {
+    if (isShowcaseMode) return;
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      Promise.resolve(onObjectsChange(serializePlacedObjects())).catch((error) => {
+        console.error("Could not save the placed objects:", error);
+        controlsHint.textContent = "Could not save your objects. Check your connection and try again.";
+      });
+    }, 400);
+  }
+
+  async function createShowcaseGroup() {
+    const objects = contributions.flatMap((contribution) =>
+      contribution.objects.map((object) => ({
+        ...object,
+        playerName: contribution.playerName,
+      })),
+    );
+    const group = new THREE.Group();
+    if (!objects.length) return group;
+    const columns = Math.ceil(Math.sqrt(objects.length));
+    const spacing = 1.25;
+    for (let index = 0; index < objects.length; index += 1) {
+      const entry = objects[index];
+      const model = models[entry.modelIndex];
+      const source = await loadModel(entry.modelIndex);
+      const object = source.clone(true);
+      object.scale.setScalar(model.scale * entry.scale);
+      object.position.set(
+        (index % columns - (columns - 1) / 2) * spacing,
+        0,
+        Math.floor(index / columns) * spacing,
+      );
+      group.add(object);
+    }
+    return group;
+  }
+
+  function placeShowcaseInFrontOfViewer() {
+    if (!showcaseGroup) return;
+    showcaseGroup.matrix.copy(
+      xrViewerTransform.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, -1.4)),
+    );
+    showcaseGroup.matrixAutoUpdate = false;
+    scene.add(showcaseGroup);
   }
 
   function placeFromReticle() {
     if (usingWebXR) {
+      if (isShowcaseMode) {
+        if (reticle.visible) {
+          showcaseGroup.matrix.copy(reticle.matrix);
+          showcaseGroup.matrixAutoUpdate = false;
+          scene.add(showcaseGroup);
+        } else if (!hitTestSource) {
+          placeShowcaseInFrontOfViewer();
+        } else {
+          controlsHint.textContent = "Aim at a surface until the placement marker appears.";
+        }
+        return;
+      }
       if (reticle.visible) {
         placeSelected(reticle.matrix);
       } else if (!hitTestSource) {
@@ -310,6 +404,7 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   const onScaleUp = () => scaleSelected(1.18);
   const onEndDrag = () => {
     dragging = false;
+    scheduleObjectSave();
   };
   const onResize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -319,6 +414,7 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
 
   promptElement.textContent = prompt;
   overlay.classList.toggle("camera-preview", !usingWebXR);
+  overlay.classList.toggle("ar-showcase-mode", isShowcaseMode);
   overlay.classList.add("is-active");
   overlay.hidden = false;
   document.documentElement.classList.add("immersive-ar-active");
@@ -351,6 +447,10 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
   const cleanup = () => {
     if (closed) return;
     closed = true;
+    window.clearTimeout(saveTimer);
+    Promise.resolve(onObjectsChange(serializePlacedObjects())).catch((error) => {
+      console.error("Could not save the placed objects:", error);
+    });
     exitButton.removeEventListener("click", endSession);
     for (const button of overlayButtons) {
       button.removeEventListener("beforexrselect", onBeforeXRSelect);
@@ -404,8 +504,10 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
       cleanup();
       return;
     }
+    const finalSave = Promise.resolve(onObjectsChange(serializePlacedObjects()));
     try {
       await session.end();
+      await finalSave;
     } catch (error) {
       console.error("Could not cleanly end the immersive AR session:", error);
     } finally {
@@ -429,8 +531,17 @@ export async function enterAR({ overlay, prompt, exitButton, mode = "immersive" 
         console.warn("Immersive AR started without surface hit-testing:", error);
       }
       setSelectedModel(0);
+      if (isShowcaseMode) {
+        showcaseGroup = await createShowcaseGroup();
+        addButton.textContent = "Place combined scene";
+        controlsHint.textContent = hitTestSource
+          ? "Aim at a surface and tap to place the combined scene."
+          : "Tap to place the combined scene in front of you.";
+      }
       if (!hitTestSource) {
-        controlsHint.textContent = "Surface detection is unavailable. Tap to place objects in front of you; placement may not stay fixed to room surfaces.";
+        if (!isShowcaseMode) {
+          controlsHint.textContent = "Surface detection is unavailable. Tap to place objects in front of you; placement may not stay fixed to room surfaces.";
+        }
       }
     } catch (error) {
       if (session) await session.end();

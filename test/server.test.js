@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
+const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const { after, before, test } = require("node:test");
@@ -71,7 +72,7 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, ["server.js"], {
     cwd: projectDirectory,
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, DATABASE_URL: "", PORT: String(port), ROUND_DURATION_MS: "1500" },
     stdio: ["ignore", "ignore", "pipe"],
   });
   serverProcess.stderr.setEncoding("utf8");
@@ -121,12 +122,18 @@ test("serves host and player screens", async () => {
   assert.match(hostPage, /id="start-session"/);
   assert.match(hostPage, /id="round-timer"/);
   assert.match(hostPage, /id="round-complete"/);
+  assert.match(hostPage, /id="host-showcase"/);
+  assert.match(hostPage, /id="host-results-link"/);
+  assert.match(hostPage, /id="host-results-qr"/);
+  assert.match(hostPage, /"three": "\/vendor\/three\.module\.js"/);
   assert.equal(joinResponse.status, 200);
   assert.match(joinPage, /id="room-code-input"/);
   assert.match(joinPage, /id="mobile-game-panel"/);
   assert.match(joinPage, /id="camera-preview"/);
   assert.match(joinPage, /id="mobile-round-timer"/);
   assert.match(joinPage, /id="ar-round-timer"/);
+  assert.match(joinPage, /id="mobile-showcase"/);
+  assert.match(joinPage, /id="view-showcase-ar"/);
   assert.match(joinPage, /id="exit-ar"/);
   assert.match(joinPage, /Time’s up!/);
   assert.match(joinPage, /Choose furniture to place/);
@@ -134,6 +141,15 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /id="scale-ar-object-down"/);
   assert.match(joinPage, /id="scale-ar-object-up"/);
   assert.match(joinPage, /type="module" src="\/join\.js"/);
+});
+
+test("serves the combined showcase module", async () => {
+  const response = await fetch(`${baseUrl}/showcase.js`);
+  const module = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(module, /export async function renderShowcase/);
+  assert.match(module, /GLTFLoader/);
 });
 
 test("serves the AR module and Three.js runtime", async () => {
@@ -237,6 +253,7 @@ test("rejects unsupported methods", async () => {
 });
 
 test("creates rooms, validates joins, and broadcasts connected players", async (context) => {
+  assert.match(fs.readFileSync(path.join(projectDirectory, "server.js"), "utf8"), /5 \* 60 \* 1000/);
   const createResponse = await fetch(`${baseUrl}/api/rooms`, { method: "POST" });
   const room = await createResponse.json();
   assert.equal(createResponse.status, 201);
@@ -346,8 +363,8 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.equal(startResponse.status, 200);
   assert.equal(started.phase, "active");
   assert.equal(started.prompt, room.prompt);
-  assert.ok(started.timerEndsAt >= startRequestedAt + 29_000);
-  assert.ok(started.timerEndsAt <= Date.now() + 30_000);
+  assert.ok(started.timerEndsAt >= startRequestedAt + 1_400);
+  assert.ok(started.timerEndsAt <= Date.now() + 1_500);
   assert.equal(activeRoom.prompt, room.prompt);
   assert.equal(activeRoom.timerEndsAt, started.timerEndsAt);
   assert.equal((await activePlayerRoomPromise).phase, "active");
@@ -357,6 +374,52 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const repeatedStartResult = await repeatedStart.json();
   assert.equal(repeatedStart.status, 200);
   assert.equal(repeatedStartResult.timerEndsAt, started.timerEndsAt);
+
+  const saveResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      playerId: player.playerId,
+      objects: [{ modelIndex: 0, scale: 1.25 }],
+    }),
+  });
+  assert.equal(saveResponse.status, 200);
+  const invalidSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      playerId: player.playerId,
+      objects: [{ modelIndex: 99, scale: 1 }],
+    }),
+  });
+  assert.equal(invalidSave.status, 400);
+  const unauthorizedSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ playerId: "not-a-player", objects: [] }),
+  });
+  assert.equal(unauthorizedSave.status, 403);
+  const prematureResults = await fetch(`${baseUrl}/api/rooms/${room.code}/results`);
+  assert.equal(prematureResults.status, 409);
+  const completedRoomPromise = waitForMessage(
+    hostSocket,
+    (message) => message.type === "room" && message.phase === "complete",
+  );
+  const completedPlayerRoomPromise = waitForMessage(
+    playerSocket,
+    (message) => message.type === "room" && message.phase === "complete",
+  );
+  const completedRoom = await completedRoomPromise;
+  assert.equal(completedRoom.phase, "complete");
+  assert.equal((await completedPlayerRoomPromise).phase, "complete");
+  const resultResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/results`);
+  const result = await resultResponse.json();
+  assert.equal(resultResponse.status, 200);
+  assert.deepEqual(result.contributions, [{
+    playerId: player.playerId,
+    playerName: "Alex",
+    objects: [{ modelIndex: 0, scale: 1.25 }],
+  }]);
 
   const disconnectedRoomPromise = waitForMessage(
     hostSocket,
