@@ -1,4 +1,5 @@
 import { enterAR } from "/ar.js";
+import { primitives } from "/primitives.js";
 import { renderShowcase } from "/showcase.js";
 
 const joinForm = document.querySelector("#join-form");
@@ -10,6 +11,7 @@ const joinedName = document.querySelector("#joined-name");
 const connectionElement = document.querySelector("#player-connection");
 const gamePanel = document.querySelector("#mobile-game-panel");
 const mobilePrompt = document.querySelector("#mobile-prompt");
+const playerPrimitiveName = document.querySelector("#player-primitive-name");
 const mobileTimerElement = document.querySelector("#mobile-round-timer");
 const arTimerElement = document.querySelector("#ar-round-timer");
 const mobileCompleteElement = document.querySelector("#mobile-round-complete");
@@ -27,6 +29,7 @@ const exitArButton = document.querySelector("#exit-ar");
 
 let playerId;
 let roomCode;
+let primitiveIndex = null;
 let timerEndsAt = null;
 let roundComplete = false;
 let latestObjects = [];
@@ -206,6 +209,7 @@ async function startAR(mode, contributions = null) {
       exitButton: exitArButton,
       mode,
       contributions,
+      primitiveIndex: primitiveIndex ?? 0,
       onObjectsChange: (objects) => {
         latestObjects = objects;
         return contributions ? undefined : saveObjects(objects);
@@ -267,6 +271,8 @@ joinForm.addEventListener("submit", async (event) => {
     if (!response.ok) throw new Error(result.error || "Could not join the room.");
 
     playerId = result.playerId;
+    primitiveIndex = result.primitiveIndex;
+    playerPrimitiveName.textContent = primitives[primitiveIndex]?.name || "Unavailable";
     joinedName.textContent = result.name;
     joinForm.hidden = true;
     joinedPanel.hidden = false;

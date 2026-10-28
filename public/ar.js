@@ -1,14 +1,5 @@
 import * as THREE from "/vendor/three.module.js";
-import { GLTFLoader } from "/vendor/three-examples/loaders/GLTFLoader.js";
-
-const models = [
-  { name: "Chair", file: "dylan_armchair_yolk_yellow.glb", scale: 0.01 },
-  { name: "Lounger", file: "ivan_armchair_mineral_blue.glb", scale: 0.01 },
-  { name: "Marble table", file: "marble_coffee_table.glb", scale: 0.005 },
-  { name: "Walnut table", file: "flippa_functional_coffee_table_w._storagewalnut.glb", scale: 0.01 },
-  { name: "Velvet chair", file: "frame_armchairpetrol_velvet_with_gold_frame.glb", scale: 0.01 },
-  { name: "Nesting tables", file: "elnaz_nesting_side_tables_brass__green_marble.glb", scale: 0.01 },
-];
+import { createPrimitive, primitives } from "/primitives.js";
 
 export async function enterAR({
   overlay,
@@ -16,10 +7,14 @@ export async function enterAR({
   exitButton,
   mode = "immersive",
   contributions = null,
+  primitiveIndex = 0,
   onObjectsChange = () => {},
 }) {
   const usingWebXR = mode === "immersive";
   const isShowcaseMode = Array.isArray(contributions);
+  if (!Number.isInteger(primitiveIndex) || !primitives[primitiveIndex]) {
+    throw new Error("Your assigned primitive is unavailable. Rejoin the room and try again.");
+  }
   if (isShowcaseMode && !usingWebXR) {
     throw new Error("The combined showcase in AR requires immersive WebXR.");
   }
@@ -97,10 +92,7 @@ export async function enterAR({
   const controller = renderer.xr.getController(0);
   scene.add(controller);
 
-  const loader = new GLTFLoader();
-  const loadedModels = new Map();
   const placedObjects = new Set();
-  const catalogButtons = Array.from(overlay.querySelectorAll("[data-model-index]"));
   const addButton = overlay.querySelector("#add-ar-object");
   const scaleDownButton = overlay.querySelector("#scale-ar-object-down");
   const scaleUpButton = overlay.querySelector("#scale-ar-object-up");
@@ -113,7 +105,7 @@ export async function enterAR({
   const intersection = new THREE.Vector3();
   let showcaseGroup = null;
   let saveTimer = null;
-  let selectedModelIndex = 0;
+  const selectedModelIndex = primitiveIndex;
   let selectedObject = null;
   let hitTestSource = null;
   let session = null;
@@ -122,36 +114,6 @@ export async function enterAR({
   let dragging = false;
   let closed = false;
 
-  function loadModel(index) {
-    if (!loadedModels.has(index)) {
-      const model = models[index];
-      const loading = new Promise((resolve, reject) => {
-        loader.load(`/ar-assets/glbs/${encodeURIComponent(model.file)}`, (result) => {
-          resolve(result.scene);
-        }, undefined, reject);
-      });
-      loadedModels.set(index, loading);
-      loading.catch(() => loadedModels.delete(index));
-    }
-    return loadedModels.get(index);
-  }
-
-  function setSelectedModel(index) {
-    selectedModelIndex = index;
-    for (const button of catalogButtons) {
-      const selected = Number(button.dataset.modelIndex) === index;
-      button.classList.toggle("is-selected", selected);
-      button.setAttribute("aria-pressed", String(selected));
-    }
-    controlsHint.textContent = usingWebXR && !hitTestSource
-      ? `Selected ${models[index].name}. Surface detection is unavailable; tap to place it in front of you.`
-      : `Selected ${models[index].name}. Aim at a surface and tap to place.`;
-    loadModel(index).catch((error) => {
-      console.error(`Could not load AR model ${models[index].file}:`, error);
-      controlsHint.textContent = `Could not load ${models[index].name}. Check your connection and try another model.`;
-    });
-  }
-
   function setSelectedObject(object) {
     selectedObject = object;
     controlsHint.textContent = selectedObject
@@ -159,23 +121,20 @@ export async function enterAR({
       : "Aim at a surface and tap to place the selected item.";
   }
 
-  async function placeSelected(transform) {
+  function placeSelected(transform) {
     const matrix = transform.clone();
     const index = selectedModelIndex;
-    controlsHint.textContent = `Loading ${models[index].name}…`;
     try {
-      const source = await loadModel(index);
       if (closed || (usingWebXR && session?.ended)) return;
-      const object = source.clone(true);
+      const object = createPrimitive(index);
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
       const hitScale = new THREE.Vector3();
       matrix.decompose(position, quaternion, hitScale);
       object.position.copy(position);
       object.quaternion.copy(quaternion);
-      object.scale.setScalar(models[index].scale);
-      object.userData.arScale = models[index].scale;
-      object.userData.arBaseScale = models[index].scale;
+      object.userData.arScale = 1;
+      object.userData.arBaseScale = 1;
       object.userData.arModelIndex = index;
       object.traverse((part) => {
         if (part.isMesh) part.userData.arObject = object;
@@ -185,8 +144,8 @@ export async function enterAR({
       setSelectedObject(object);
       scheduleObjectSave();
     } catch (error) {
-      console.error(`Could not place AR model ${models[index].file}:`, error);
-      controlsHint.textContent = `Could not place ${models[index].name}. Try again.`;
+      console.error(`Could not place ${primitives[index].name}:`, error);
+      controlsHint.textContent = `Could not place your ${primitives[index].name.toLowerCase()}. Try again.`;
     }
   }
 
@@ -309,11 +268,8 @@ export async function enterAR({
       const contribution = contributions[playerIndex];
       const playerGroup = new THREE.Group();
       for (const [objectIndex, entry] of contribution.objects.entries()) {
-        const model = models[entry.modelIndex];
-        if (!model) throw new Error("A saved object uses an unknown furniture model.");
-        const source = await loadModel(entry.modelIndex);
-        const object = source.clone(true);
-        object.scale.setScalar(model.scale * entry.scale);
+        const object = createPrimitive(entry.modelIndex);
+        object.scale.setScalar(entry.scale);
         if (Array.isArray(entry.position) && Array.isArray(entry.quaternion)) {
           object.position.fromArray(entry.position);
           object.quaternion.fromArray(entry.quaternion).normalize();
@@ -364,32 +320,6 @@ export async function enterAR({
     placeSelected(transform);
   }
 
-  const onCatalogClick = (event) => {
-    if (event.detail !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setSelectedModel(Number(event.currentTarget.dataset.modelIndex));
-  };
-  const catalogPointerStarts = new Map();
-  const onCatalogPointerDown = (event) => {
-    catalogPointerStarts.set(event.pointerId, {
-      button: event.currentTarget,
-      x: event.clientX,
-      y: event.clientY,
-    });
-  };
-  const onCatalogPointerUp = (event) => {
-    const start = catalogPointerStarts.get(event.pointerId);
-    catalogPointerStarts.delete(event.pointerId);
-    if (
-      !start ||
-      start.button !== event.currentTarget ||
-      Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10
-    ) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setSelectedModel(Number(event.currentTarget.dataset.modelIndex));
-  };
   const onBeforeXRSelect = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -409,6 +339,7 @@ export async function enterAR({
   };
 
   promptElement.textContent = prompt;
+  overlay.querySelector("#ar-primitive-name").textContent = primitives[primitiveIndex].name;
   overlay.classList.toggle("camera-preview", !usingWebXR);
   overlay.classList.toggle("ar-showcase-mode", isShowcaseMode);
   overlay.classList.add("is-active");
@@ -419,12 +350,6 @@ export async function enterAR({
 
   for (const button of overlayButtons) {
     button.addEventListener("beforexrselect", onBeforeXRSelect);
-  }
-  for (const button of catalogButtons) {
-    button.addEventListener("click", onCatalogClick);
-    button.addEventListener("pointerdown", onCatalogPointerDown);
-    button.addEventListener("pointerup", onCatalogPointerUp);
-    button.addEventListener("pointercancel", onEndDrag);
   }
   addButton.addEventListener("click", onPlaceClick);
   scaleDownButton.addEventListener("click", onScaleDown);
@@ -454,12 +379,6 @@ export async function enterAR({
     for (const button of overlayButtons) {
       button.removeEventListener("beforexrselect", onBeforeXRSelect);
     }
-    for (const button of catalogButtons) {
-      button.removeEventListener("click", onCatalogClick);
-      button.removeEventListener("pointerdown", onCatalogPointerDown);
-      button.removeEventListener("pointerup", onCatalogPointerUp);
-      button.removeEventListener("pointercancel", onEndDrag);
-    }
     addButton.removeEventListener("click", onPlaceClick);
     scaleDownButton.removeEventListener("click", onScaleDown);
     scaleUpButton.removeEventListener("click", onScaleUp);
@@ -481,24 +400,17 @@ export async function enterAR({
     renderer.domElement.remove();
     cameraVideo?.remove();
     cameraStream?.getTracks().forEach((track) => track.stop());
-    reticle.geometry.dispose();
-    reticle.material.dispose();
-
     const geometries = new Set();
     const materials = new Set();
-    for (const sourcePromise of loadedModels.values()) {
-      sourcePromise.then((source) => {
-        source.traverse((part) => {
-          if (!part.isMesh) return;
-          geometries.add(part.geometry);
-          for (const material of Array.isArray(part.material) ? part.material : [part.material]) {
-            materials.add(material);
-          }
-        });
-        geometries.forEach((geometry) => geometry.dispose());
-        materials.forEach((material) => material.dispose());
-      }).catch(() => {});
-    }
+    scene.traverse((part) => {
+      if (!part.isMesh) return;
+      geometries.add(part.geometry);
+      for (const material of Array.isArray(part.material) ? part.material : [part.material]) {
+        materials.add(material);
+      }
+    });
+    geometries.forEach((geometry) => geometry.dispose());
+    materials.forEach((material) => material.dispose());
   };
 
   async function endSession() {
@@ -533,10 +445,6 @@ export async function enterAR({
         } catch (error) {
           console.warn("Immersive AR started without surface hit-testing:", error);
         }
-        setSelectedModel(0);
-        if (!hitTestSource) {
-          controlsHint.textContent = "Surface detection is unavailable. Tap to place objects in front of you; placement may not stay fixed to room surfaces.";
-        }
       }
       if (isShowcaseMode) {
         showcaseGroup = await createShowcaseGroup();
@@ -547,11 +455,14 @@ export async function enterAR({
         console.error("Could not end the failed immersive AR session:", endError);
       });
       cleanup();
-      console.error("Could not start the AR furniture viewer:", error);
+      console.error("Could not start the AR primitive viewer:", error);
       throw immersiveSessionError(error);
     }
-  } else {
-    setSelectedModel(0);
+  }
+  if (!isShowcaseMode) {
+    controlsHint.textContent = usingWebXR && !hitTestSource
+      ? `Your shape: ${primitives[primitiveIndex].name}. Surface detection is unavailable; tap to place it in front of you.`
+      : `Your shape: ${primitives[primitiveIndex].name}. Aim at a surface and tap to place.`;
   }
 
   renderer.setAnimationLoop((time, frame) => {

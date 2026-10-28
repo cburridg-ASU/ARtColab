@@ -9,6 +9,7 @@ const { WebSocket, WebSocketServer } = require("ws");
 
 const publicDirectory = path.join(__dirname, "public");
 const roomCodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const primitiveCount = 8;
 const roomLifetime = 2 * 60 * 60 * 1000;
 const testRoundDurationMs = Number(process.env.ROUND_DURATION_MS) || null;
 const maxRequestBytes = 4096;
@@ -63,10 +64,11 @@ function getRoomSnapshot(room) {
     phase: room.phase,
     timerEndsAt: room.timerEndsAt,
     durationMinutes: room.durationMinutes,
-    players: Array.from(room.players.values(), ({ id, name, connected }) => ({
+    players: Array.from(room.players.values(), ({ id, name, connected, primitiveIndex }) => ({
       id,
       name,
       connected,
+      primitiveIndex,
     })),
   };
 }
@@ -212,11 +214,16 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 400, { error: "Enter a player name to join." });
         return;
       }
+      if (room.players.size >= primitiveCount) {
+        sendJson(response, 409, { error: "This room is full. Each player needs a unique primitive." });
+        return;
+      }
 
       const name = body.name.trim().slice(0, 20);
       const playerId = crypto.randomUUID();
-      room.players.set(playerId, { id: playerId, name, connected: false });
-      sendJson(response, 201, { code, playerId, name });
+      const primitiveIndex = room.players.size;
+      room.players.set(playerId, { id: playerId, name, connected: false, primitiveIndex });
+      sendJson(response, 201, { code, playerId, name, primitiveIndex });
       broadcastRoom(room);
       return;
     } catch (error) {
@@ -300,8 +307,7 @@ const server = http.createServer(async (request, response) => {
       const objectsAreValid = body.objects.every((object) =>
         object &&
         Number.isInteger(object.modelIndex) &&
-        object.modelIndex >= 0 &&
-        object.modelIndex < 6 &&
+        object.modelIndex === player.primitiveIndex &&
         Number.isFinite(object.scale) &&
         object.scale >= 0.35 &&
         object.scale <= 3 &&

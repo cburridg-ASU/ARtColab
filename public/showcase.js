@@ -1,7 +1,5 @@
 import * as THREE from "/vendor/three.module.js";
-import { GLTFLoader } from "/vendor/three-examples/loaders/GLTFLoader.js";
-
-const modelScales = [0.01, 0.01, 0.005, 0.01, 0.01, 0.01];
+import { createPrimitive, primitives } from "/primitives.js";
 
 export async function renderShowcase(canvas, contributions, playerList) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -32,7 +30,7 @@ export async function renderShowcase(canvas, contributions, playerList) {
     playerList.replaceChildren();
     if (!contributions.length) {
       const item = document.createElement("li");
-      item.textContent = "No furniture was placed this round.";
+      item.textContent = "No shapes were placed this round.";
       playerList.append(item);
     }
     for (const contribution of contributions) {
@@ -42,26 +40,15 @@ export async function renderShowcase(canvas, contributions, playerList) {
     }
   }
 
-  const loader = new GLTFLoader();
-  const loadingModels = new Map();
-  const loadModel = (index) => {
-    if (!loadingModels.has(index)) {
-      loadingModels.set(index, loader.loadAsync(
-        `/ar-assets/glbs/${encodeURIComponent(modelFiles[index])}`,
-      ));
-    }
-    return loadingModels.get(index);
-  };
   for (let playerIndex = 0; playerIndex < contributions.length; playerIndex += 1) {
     const contribution = contributions[playerIndex];
     const playerGroup = new THREE.Group();
-    await Promise.all(contribution.objects.map(async (entry, objectIndex) => {
-      if (!Number.isInteger(entry.modelIndex) || !modelScales[entry.modelIndex]) {
-        throw new Error("A saved object uses an unknown furniture model.");
+    contribution.objects.forEach((entry, objectIndex) => {
+      if (!Number.isInteger(entry.modelIndex) || !primitives[entry.modelIndex]) {
+        throw new Error("A saved object uses an unknown primitive.");
       }
-      const gltf = await loadModel(entry.modelIndex);
-      const object = gltf.scene.clone(true);
-      object.scale.setScalar(modelScales[entry.modelIndex] * entry.scale);
+      const object = createPrimitive(entry.modelIndex);
+      object.scale.setScalar(entry.scale);
       if (Array.isArray(entry.position) && Array.isArray(entry.quaternion)) {
         object.position.fromArray(entry.position);
         object.quaternion.fromArray(entry.quaternion).normalize();
@@ -69,7 +56,7 @@ export async function renderShowcase(canvas, contributions, playerList) {
         object.position.set(objectIndex * 1.25, 0, 0);
       }
       playerGroup.add(object);
-    }));
+    });
     playerGroup.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(playerGroup);
     if (!bounds.isEmpty()) {
@@ -183,12 +170,3 @@ export async function renderShowcase(canvas, contributions, playerList) {
     materials.forEach((material) => material.dispose());
   };
 }
-
-const modelFiles = [
-  "dylan_armchair_yolk_yellow.glb",
-  "ivan_armchair_mineral_blue.glb",
-  "marble_coffee_table.glb",
-  "flippa_functional_coffee_table_w._storagewalnut.glb",
-  "frame_armchairpetrol_velvet_with_gold_frame.glb",
-  "elnaz_nesting_side_tables_brass__green_marble.glb",
-];

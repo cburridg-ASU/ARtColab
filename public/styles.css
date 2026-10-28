@@ -610,6 +610,16 @@ h1 span {
   margin: 9px 0 17px;
 }
 
+.assigned-shape {
+  margin: 12px 0;
+  color: #77736a;
+  font-size: 0.85rem;
+}
+
+.assigned-shape strong {
+  color: #25241f;
+}
+
 #camera-preview {
   width: 100%;
   margin-top: 10px;
@@ -724,6 +734,7 @@ h1 span {
   bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
   left: 0;
   display: flex;
+  justify-content: center;
   gap: 9px;
   overflow-x: auto;
   padding: 8px 14px;
@@ -737,35 +748,29 @@ h1 span {
 
 .ar-item {
   display: flex;
-  width: 88px;
-  min-width: 88px;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 6px;
-  border: 2px solid transparent;
+  gap: 4px;
+  padding: 9px 14px;
+  border: 1px solid #ffffff80;
   border-radius: 9px;
   background: #fffdf2e8;
   box-shadow: 0 5px 20px #0002;
   color: #25241f;
   font: inherit;
-  font-size: 0.62rem;
   font-weight: 600;
-  cursor: pointer;
-  touch-action: manipulation;
   pointer-events: auto;
 }
 
-.ar-item.is-selected {
-  border-color: #f05d43;
+.assigned-primitive {
+  min-width: 120px;
+  font-size: 0.95rem;
 }
 
-.ar-item img {
-  width: 70px;
-  height: 55px;
-  border-radius: 5px;
-  background: #f2eee5;
-  object-fit: contain;
+.assigned-primitive .eyebrow {
+  margin: 0;
+  color: #77736a;
+  font-size: 0.56rem;
 }
 
 .ar-controls {
@@ -881,16 +886,6 @@ footer {
 
   .ar-catalog {
     bottom: max(145px, calc(env(safe-area-inset-bottom) + 138px));
-  }
-
-  .ar-item {
-    width: 78px;
-    min-width: 78px;
-  }
-
-  .ar-item img {
-    width: 62px;
-    height: 48px;
   }
 
   .room-qr {

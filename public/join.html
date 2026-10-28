@@ -33,6 +33,7 @@
         <section class="mobile-game-panel" id="mobile-game-panel" aria-labelledby="mobile-prompt" hidden>
           <p class="eyebrow">YOUR PROMPT</p>
           <h2 class="mobile-prompt" id="mobile-prompt"></h2>
+          <p class="assigned-shape">Your shape: <strong id="player-primitive-name"></strong></p>
           <p class="round-timer" id="mobile-round-timer" role="timer" aria-live="off"></p>
           <p class="round-complete" id="mobile-round-complete" role="status" hidden>Time’s up!</p>
           <p class="joined-message">Look around and find a place to start creating.</p>
@@ -58,31 +59,11 @@
             <button class="secondary-button" id="exit-ar" type="button" aria-label="Exit AR and return to the game">Exit AR</button>
           </div>
         </div>
-        <div class="ar-catalog" id="ar-catalog" aria-label="Choose furniture to place">
-          <button class="ar-item is-selected" type="button" data-model-index="0" aria-pressed="true" aria-label="Select yellow armchair">
-            <img src="/ar-assets/pngs/armchair.png" alt="">
-            <span>Chair</span>
-          </button>
-          <button class="ar-item" type="button" data-model-index="1" aria-pressed="false" aria-label="Select lounger">
-            <img src="/ar-assets/pngs/lounger.png" alt="">
-            <span>Lounger</span>
-          </button>
-          <button class="ar-item" type="button" data-model-index="2" aria-pressed="false" aria-label="Select marble coffee table">
-            <img src="/ar-assets/pngs/marble-coffeetable.png" alt="">
-            <span>Marble table</span>
-          </button>
-          <button class="ar-item" type="button" data-model-index="3" aria-pressed="false" aria-label="Select walnut coffee table">
-            <img src="/ar-assets/pngs/walnut-coffeetable.png" alt="">
-            <span>Walnut table</span>
-          </button>
-          <button class="ar-item" type="button" data-model-index="4" aria-pressed="false" aria-label="Select petrol velvet armchair">
-            <img src="/ar-assets/pngs/chair-with-gold.png" alt="">
-            <span>Velvet chair</span>
-          </button>
-          <button class="ar-item" type="button" data-model-index="5" aria-pressed="false" aria-label="Select nesting tables">
-            <img src="/ar-assets/pngs/nesting-tables.png" alt="">
-            <span>Nesting tables</span>
-          </button>
+        <div class="ar-catalog" aria-label="Your assigned primitive">
+          <div class="ar-item assigned-primitive">
+            <span class="eyebrow">YOUR SHAPE</span>
+            <span id="ar-primitive-name">Primitive</span>
+          </div>
         </div>
         <div class="ar-controls" aria-label="AR object controls">
           <button class="secondary-button" id="add-ar-object" type="button">Place selected</button>

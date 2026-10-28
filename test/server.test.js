@@ -137,7 +137,10 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /id="view-showcase-ar"/);
   assert.match(joinPage, /id="exit-ar"/);
   assert.match(joinPage, /Time’s up!/);
-  assert.match(joinPage, /Choose furniture to place/);
+  assert.match(joinPage, /Your assigned primitive/);
+  assert.match(joinPage, /id="ar-primitive-name"/);
+  assert.match(joinPage, /id="player-primitive-name"/);
+  assert.doesNotMatch(joinPage, /data-model-index/);
   assert.match(joinPage, /id="add-ar-object"/);
   assert.match(joinPage, /id="scale-ar-object-down"/);
   assert.match(joinPage, /id="scale-ar-object-up"/);
@@ -150,8 +153,20 @@ test("serves the combined showcase module", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(module, /export async function renderShowcase/);
-  assert.match(module, /GLTFLoader/);
+  assert.match(module, /createPrimitive/);
+  assert.doesNotMatch(module, /GLTFLoader/);
   assert.match(module, /playerGroup\.position\.set\(-center\.x, -bounds\.min\.y, -center\.z\)/);
+});
+
+test("serves the primitive geometry factory", async () => {
+  const response = await fetch(`${baseUrl}/primitives.js`);
+  const module = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(module, /export const primitives = \[/);
+  assert.equal((module.match(/\{ name:/g) || []).length, 8);
+  assert.match(module, /new THREE\.BoxGeometry/);
+  assert.match(module, /new THREE\.SphereGeometry/);
+  assert.doesNotMatch(module, /GLTFLoader|ar-assets/);
 });
 
 test("serves the AR module and Three.js runtime", async () => {
@@ -180,7 +195,8 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
   assert.match(arModule, /mediaDevices\?\.getUserMedia/);
-  assert.match(arModule, /GLTFLoader/);
+  assert.match(arModule, /createPrimitive/);
+  assert.doesNotMatch(arModule, /GLTFLoader/);
   assert.match(arModule, /placeSelected/);
   assert.doesNotMatch(arModule, /await navigator\.xr\?\.isSessionSupported/);
   assert.ok(
@@ -201,7 +217,7 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /selectstart/);
   assert.match(arModule, /scaleSelected/);
   assert.match(arModule, /playerGroup\.position\.set\(-center\.x, -bounds\.min\.y, -center\.z\)/);
-  assert.match(arModule, /button\.addEventListener\("pointerup", onCatalogPointerUp\)/);
+  assert.match(arModule, /primitiveIndex/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
   assert.equal(threeCoreResponse.status, 200);
@@ -254,6 +270,31 @@ test("rejects unsupported methods", async () => {
 
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET, HEAD");
+});
+
+test("assigns unique primitives and limits rooms to eight players", async () => {
+  const createResponse = await fetch(`${baseUrl}/api/rooms`, { method: "POST" });
+  const { code } = await createResponse.json();
+  const assignedIndexes = [];
+
+  for (let index = 0; index < 8; index += 1) {
+    const response = await fetch(`${baseUrl}/api/rooms/${code}/players`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: `Player ${index + 1}` }),
+    });
+    const player = await response.json();
+    assert.equal(response.status, 201);
+    assignedIndexes.push(player.primitiveIndex);
+  }
+
+  assert.deepEqual(assignedIndexes, [0, 1, 2, 3, 4, 5, 6, 7]);
+  const fullRoomResponse = await fetch(`${baseUrl}/api/rooms/${code}/players`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Player 9" }),
+  });
+  assert.equal(fullRoomResponse.status, 409);
 });
 
 test("creates rooms, validates joins, and broadcasts connected players", async (context) => {
@@ -331,8 +372,10 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const player = await joinResponse.json();
   assert.equal(joinResponse.status, 201);
   assert.equal(player.name, "Alex");
+  assert.equal(player.primitiveIndex, 0);
   const waitingRoom = await waitingRoomUpdate;
   assert.equal(waitingRoom.players[0].connected, false);
+  assert.equal(waitingRoom.players[0].primitiveIndex, 0);
 
   const { socket: playerSocket, opened: playerOpened } = connectWebSocket(
     `${baseUrl.replace("http:", "ws:")}/ws?role=player&code=${room.code}&playerId=${player.playerId}`,
@@ -349,12 +392,39 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.equal(playerSnapshot.players[0].name, "Alex");
   assert.equal(connectedRoom.players[0].connected, true);
 
+  const secondRoomUpdate = waitForMessage(
+    hostSocket,
+    (message) => message.type === "room" && message.players.length === 2,
+  );
+  const secondJoinResponse = await fetch(`${baseUrl}/api/rooms/${room.code}/players`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Jamie" }),
+  });
+  const secondPlayer = await secondJoinResponse.json();
+  const roomWithSecondPlayer = await secondRoomUpdate;
+  assert.equal(secondJoinResponse.status, 201);
+  assert.equal(secondPlayer.primitiveIndex, 1);
+  assert.notEqual(secondPlayer.primitiveIndex, player.primitiveIndex);
+  assert.equal(roomWithSecondPlayer.players[1].primitiveIndex, 1);
+  const { socket: secondPlayerSocket, opened: secondPlayerOpened } = connectWebSocket(
+    `${baseUrl.replace("http:", "ws:")}/ws?role=player&code=${room.code}&playerId=${secondPlayer.playerId}`,
+  );
+  context.after(() => secondPlayerSocket.close());
+  const secondPlayerSnapshot = waitForMessage(secondPlayerSocket, (message) => message.type === "room");
+  await secondPlayerOpened;
+  assert.equal((await secondPlayerSnapshot).players[1].primitiveIndex, 1);
+
   const activeRoomPromise = waitForMessage(
     hostSocket,
     (message) => message.type === "room" && message.phase === "active",
   );
   const activePlayerRoomPromise = waitForMessage(
     playerSocket,
+    (message) => message.type === "room" && message.phase === "active",
+  );
+  const activeSecondPlayerRoomPromise = waitForMessage(
+    secondPlayerSocket,
     (message) => message.type === "room" && message.phase === "active",
   );
   const startRequestedAt = Date.now();
@@ -381,6 +451,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.equal(activeRoom.prompt, room.prompt);
   assert.equal(activeRoom.timerEndsAt, started.timerEndsAt);
   assert.equal((await activePlayerRoomPromise).phase, "active");
+  assert.equal((await activeSecondPlayerRoomPromise).phase, "active");
   const repeatedStart = await fetch(`${baseUrl}/api/rooms/${room.code}/start`, {
     method: "POST",
   });
@@ -402,6 +473,20 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     }),
   });
   assert.equal(saveResponse.status, 200);
+  const mismatchedPrimitiveSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      playerId: player.playerId,
+      objects: [{
+        modelIndex: secondPlayer.primitiveIndex,
+        scale: 1,
+        position: [0, 0, 0],
+        quaternion: [0, 0, 0, 1],
+      }],
+    }),
+  });
+  assert.equal(mismatchedPrimitiveSave.status, 400);
   const invalidSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
