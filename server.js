@@ -304,6 +304,10 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 400, { error: "Send up to 24 placed objects." });
         return;
       }
+      if (body.placementSpace !== undefined && body.placementSpace !== "player-origin") {
+        sendJson(response, 400, { error: "The placement coordinate space is invalid." });
+        return;
+      }
       const objectsAreValid = body.objects.every((object) =>
         object &&
         Number.isInteger(object.modelIndex) &&
@@ -326,6 +330,7 @@ const server = http.createServer(async (request, response) => {
       const contribution = {
         playerId: player.id,
         playerName: player.name,
+        placementSpace: body.placementSpace || "world",
         objects: body.objects,
       };
       if (roundStore) {

@@ -9,8 +9,9 @@ export async function renderShowcase(canvas, contributions, playerList) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf5f2e9);
-  const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 100);
   camera.position.set(0, 3.2, 8);
+  const target = new THREE.Vector3();
   const group = new THREE.Group();
   scene.add(group);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x9d988d, 2));
@@ -61,21 +62,36 @@ export async function renderShowcase(canvas, contributions, playerList) {
     const bounds = new THREE.Box3().setFromObject(playerGroup);
     if (!bounds.isEmpty()) {
       const center = bounds.getCenter(new THREE.Vector3());
-      playerGroup.position.set(-center.x, -bounds.min.y, -center.z);
+      const usesPlayerOrigin = contribution.placementSpace === "player-origin";
+      playerGroup.position.set(
+        usesPlayerOrigin ? 0 : -center.x,
+        -bounds.min.y,
+        usesPlayerOrigin ? 0 : -center.z,
+      );
     }
     group.add(playerGroup);
   }
   group.updateMatrixWorld(true);
   const sceneBounds = new THREE.Box3().setFromObject(group);
   if (!sceneBounds.isEmpty()) {
-    const center = sceneBounds.getCenter(new THREE.Vector3());
+    target.copy(sceneBounds.getCenter(new THREE.Vector3()));
     const size = sceneBounds.getSize(new THREE.Vector3());
     const distance = Math.max(5, size.x * 0.9, size.y * 1.5, size.z * 1.1);
-    camera.position.set(center.x + distance * 0.2, center.y + distance * 0.45, center.z + distance);
-    camera.lookAt(center);
-    floor.position.set(center.x, sceneBounds.min.y - 0.02, center.z);
+    camera.position.set(target.x + distance * 0.2, target.y + distance * 0.45, target.z + distance);
+    camera.lookAt(target);
+    floor.position.set(target.x, sceneBounds.min.y - 0.02, target.z);
   }
 
+  const zoomInButton = canvas.parentElement.querySelector("[data-zoom-in]");
+  const zoomOutButton = canvas.parentElement.querySelector("[data-zoom-out]");
+  const zoomBy = (factor) => {
+    const offset = camera.position.clone().sub(target).multiplyScalar(factor);
+    const distance = THREE.MathUtils.clamp(offset.length(), 0.8, 80);
+    camera.position.copy(target).add(offset.setLength(distance));
+    camera.lookAt(target);
+  };
+  const onZoomIn = () => zoomBy(0.8);
+  const onZoomOut = () => zoomBy(1.25);
   let width = 0;
   let height = 0;
   const resize = () => {
@@ -108,8 +124,7 @@ export async function renderShowcase(canvas, contributions, playerList) {
       const [first, second] = activePointers.values();
       const distance = Math.hypot(first.x - second.x, first.y - second.y);
       if (pinchDistance !== null) {
-        camera.position.z = THREE.MathUtils.clamp(camera.position.z + (pinchDistance - distance) * 0.025, 3, 18);
-        camera.lookAt(0, 0.6, 0);
+        zoomBy(pinchDistance / distance);
       }
       pinchDistance = distance;
       return;
@@ -126,14 +141,15 @@ export async function renderShowcase(canvas, contributions, playerList) {
   };
   const onWheel = (event) => {
     event.preventDefault();
-    camera.position.z = THREE.MathUtils.clamp(camera.position.z + event.deltaY * 0.008, 3, 18);
-    camera.lookAt(0, 0.6, 0);
+    zoomBy(Math.exp(event.deltaY * 0.001));
   };
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
+  zoomInButton.addEventListener("click", onZoomIn);
+  zoomOutButton.addEventListener("click", onZoomOut);
   const observer = new ResizeObserver(resize);
   observer.observe(canvas);
   resize();
@@ -154,6 +170,8 @@ export async function renderShowcase(canvas, contributions, playerList) {
     canvas.removeEventListener("pointerup", onPointerUp);
     canvas.removeEventListener("pointercancel", onPointerUp);
     canvas.removeEventListener("wheel", onWheel);
+    zoomInButton.removeEventListener("click", onZoomIn);
+    zoomOutButton.removeEventListener("click", onZoomOut);
     renderer.dispose();
     floor.geometry.dispose();
     floor.material.dispose();

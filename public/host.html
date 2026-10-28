@@ -27,11 +27,11 @@
           <label class="round-duration" id="round-duration-label" for="round-duration" hidden>
             Round length
             <select id="round-duration" name="durationMinutes">
-              <option value="1">1 minute</option>
+              <option value="1" selected>1 minute</option>
               <option value="2">2 minutes</option>
               <option value="3">3 minutes</option>
               <option value="4">4 minutes</option>
-              <option value="5" selected>5 minutes</option>
+              <option value="5">5 minutes</option>
               <option value="6">6 minutes</option>
               <option value="7">7 minutes</option>
               <option value="8">8 minutes</option>
@@ -49,8 +49,14 @@
         <p class="round-complete" id="round-complete" role="status" hidden>Time’s up!</p>
         <section class="showcase-panel" id="host-showcase-panel" aria-labelledby="host-showcase-title" hidden>
           <h2 id="host-showcase-title">Everyone’s creation</h2>
-          <p class="showcase-caption">Player arrangements share a center. Drag to spin; scroll to zoom.</p>
-          <canvas class="showcase-canvas" id="host-showcase" aria-label="Combined 3D showcase"></canvas>
+          <p class="showcase-caption">Player starting points align. Drag to rotate; use the zoom controls or scroll.</p>
+          <div class="showcase-viewer">
+            <canvas class="showcase-canvas" id="host-showcase" aria-label="Combined 3D showcase"></canvas>
+            <div class="showcase-zoom-controls" aria-label="Showcase zoom controls">
+              <button type="button" data-zoom-out aria-label="Zoom out">−</button>
+              <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+            </div>
+          </div>
           <ul class="showcase-players" id="host-showcase-players"></ul>
           <div class="showcase-revisit">
             <img id="host-results-qr" alt="Scan to reopen this result on a phone" hidden>

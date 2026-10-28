@@ -9,14 +9,12 @@ export async function enterAR({
   contributions = null,
   primitiveIndex = 0,
   onObjectsChange = () => {},
+  onExit = () => {},
 }) {
   const usingWebXR = mode === "immersive";
   const isShowcaseMode = Array.isArray(contributions);
   if (!Number.isInteger(primitiveIndex) || !primitives[primitiveIndex]) {
     throw new Error("Your assigned primitive is unavailable. Rejoin the room and try again.");
-  }
-  if (isShowcaseMode && !usingWebXR) {
-    throw new Error("The combined showcase in AR requires immersive WebXR.");
   }
   let sessionRequest;
   let cameraStream;
@@ -24,7 +22,10 @@ export async function enterAR({
 
   if (usingWebXR) {
     if (!navigator.xr) {
-      throw new Error("This browser does not expose WebXR immersive AR. Open the game in your XR viewer's immersive browser, then allow camera and motion access.");
+      const browserHint = /Android/i.test(navigator.userAgent)
+        ? " On Android, immersive WebXR generally requires Chrome."
+        : "";
+      throw new Error(`This browser does not expose WebXR immersive AR. Open the game in a compatible immersive browser, then allow camera and motion access.${browserHint}`);
     }
     try {
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
@@ -55,6 +56,12 @@ export async function enterAR({
       cameraStream?.getTracks().forEach((track) => track.stop());
       throwCameraError(error);
     }
+  }
+  if (isShowcaseMode && !usingWebXR) {
+    showcaseGroup = await createShowcaseGroup();
+    showcaseGroup.position.set(0, -0.25, -1.5);
+    scene.add(showcaseGroup);
+    controlsHint.textContent = "Camera preview of the combined scene. Exit to return to results.";
   }
 
   const renderer = new THREE.WebGLRenderer({
@@ -111,14 +118,23 @@ export async function enterAR({
   let session = null;
   let xrReferenceSpace = null;
   const xrViewerTransform = new THREE.Matrix4();
+  let placementOrigin = null;
   let dragging = false;
   let closed = false;
+  let isActive = false;
+  let exitNotified = false;
 
   function setSelectedObject(object) {
     selectedObject = object;
     controlsHint.textContent = selectedObject
       ? "Object selected. Drag to move it or use the size controls."
       : "Aim at a surface and tap to place the selected item.";
+  }
+
+  function notifyExit() {
+    if (!isActive || exitNotified) return;
+    exitNotified = true;
+    onExit();
   }
 
   function placeSelected(transform) {
@@ -131,6 +147,12 @@ export async function enterAR({
       const quaternion = new THREE.Quaternion();
       const hitScale = new THREE.Vector3();
       matrix.decompose(position, quaternion, hitScale);
+      if (!placementOrigin) {
+        placementOrigin = {
+          position: position.clone(),
+          quaternion: quaternion.clone(),
+        };
+      }
       object.position.copy(position);
       object.quaternion.copy(quaternion);
       object.userData.arScale = 1;
@@ -243,11 +265,18 @@ export async function enterAR({
   }
 
   function serializePlacedObjects() {
+    const originRotationInverse = placementOrigin?.quaternion.clone().invert();
     return Array.from(placedObjects, (object) => ({
       modelIndex: object.userData.arModelIndex,
       scale: object.userData.arScale / object.userData.arBaseScale,
-      position: object.position.toArray(),
-      quaternion: object.quaternion.toArray(),
+      position: placementOrigin
+        ? object.position.clone().sub(placementOrigin.position)
+          .applyQuaternion(originRotationInverse)
+          .toArray()
+        : object.position.toArray(),
+      quaternion: placementOrigin
+        ? originRotationInverse.clone().multiply(object.quaternion).normalize().toArray()
+        : object.quaternion.toArray(),
     }));
   }
 
@@ -255,7 +284,7 @@ export async function enterAR({
     if (isShowcaseMode) return;
     window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
-      Promise.resolve(onObjectsChange(serializePlacedObjects())).catch((error) => {
+      Promise.resolve(onObjectsChange(serializePlacedObjects(), "player-origin")).catch((error) => {
         console.error("Could not save the placed objects:", error);
         controlsHint.textContent = "Could not save your objects. Check your connection and try again.";
       });
@@ -281,8 +310,13 @@ export async function enterAR({
       playerGroup.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(playerGroup);
       if (!bounds.isEmpty()) {
+        const usesPlayerOrigin = contribution.placementSpace === "player-origin";
         const center = bounds.getCenter(new THREE.Vector3());
-        playerGroup.position.set(-center.x, -bounds.min.y, -center.z);
+        playerGroup.position.set(
+          usesPlayerOrigin ? 0 : -center.x,
+          -bounds.min.y,
+          usesPlayerOrigin ? 0 : -center.z,
+        );
       }
       group.add(playerGroup);
     }
@@ -360,19 +394,21 @@ export async function enterAR({
   window.addEventListener("resize", onResize);
 
   if (!usingWebXR) {
-    renderer.domElement.style.pointerEvents = "auto";
-    renderer.domElement.addEventListener("pointerdown", handlePreviewPointerDown);
-    renderer.domElement.addEventListener("pointermove", updatePreviewDrag);
-    renderer.domElement.addEventListener("pointerup", onEndDrag);
-    renderer.domElement.addEventListener("pointercancel", onEndDrag);
-    controlsHint.textContent = "Camera preview only. Tap to place; objects will not track room surfaces.";
+    renderer.domElement.style.pointerEvents = isShowcaseMode ? "none" : "auto";
+    if (!isShowcaseMode) {
+      renderer.domElement.addEventListener("pointerdown", handlePreviewPointerDown);
+      renderer.domElement.addEventListener("pointermove", updatePreviewDrag);
+      renderer.domElement.addEventListener("pointerup", onEndDrag);
+      renderer.domElement.addEventListener("pointercancel", onEndDrag);
+      controlsHint.textContent = "Camera preview only. Tap to place; objects will not track room surfaces.";
+    }
   }
 
   const cleanup = () => {
     if (closed) return;
     closed = true;
     window.clearTimeout(saveTimer);
-    Promise.resolve(onObjectsChange(serializePlacedObjects())).catch((error) => {
+    Promise.resolve(onObjectsChange(serializePlacedObjects(), "player-origin")).catch((error) => {
       console.error("Could not save the placed objects:", error);
     });
     exitButton.removeEventListener("click", endSession);
@@ -416,9 +452,10 @@ export async function enterAR({
   async function endSession() {
     if (!session) {
       cleanup();
+      notifyExit();
       return;
     }
-    const finalSave = Promise.resolve(onObjectsChange(serializePlacedObjects()));
+    const finalSave = Promise.resolve(onObjectsChange(serializePlacedObjects(), "player-origin"));
     try {
       await session.end();
       await finalSave;
@@ -426,10 +463,14 @@ export async function enterAR({
       console.error("Could not cleanly end the immersive AR session:", error);
     } finally {
       cleanup();
+      notifyExit();
     }
   }
 
-  const onSessionEnded = () => cleanup();
+  const onSessionEnded = () => {
+    cleanup();
+    notifyExit();
+  };
   exitButton.addEventListener("click", endSession);
 
   if (usingWebXR) {
@@ -459,12 +500,24 @@ export async function enterAR({
       throw immersiveSessionError(error);
     }
   }
+  if (isShowcaseMode && !usingWebXR) {
+    try {
+      showcaseGroup = await createShowcaseGroup();
+      showcaseGroup.position.set(0, -0.25, -1.5);
+      scene.add(showcaseGroup);
+      controlsHint.textContent = "Camera preview of the combined scene. Exit to return to results.";
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  }
   if (!isShowcaseMode) {
     controlsHint.textContent = usingWebXR && !hitTestSource
       ? `Your shape: ${primitives[primitiveIndex].name}. Surface detection is unavailable; tap to place it in front of you.`
       : `Your shape: ${primitives[primitiveIndex].name}. Aim at a surface and tap to place.`;
   }
 
+  isActive = true;
   renderer.setAnimationLoop((time, frame) => {
     if (usingWebXR && frame) {
       const referenceSpace = renderer.xr.getReferenceSpace();
@@ -504,7 +557,10 @@ function immersiveSessionError(error) {
     return new Error("The XR viewer denied camera passthrough. Allow camera/motion access for this site and start AR from its immersive browser, not a regular web tab.");
   }
   const details = error?.message ? ` ${error.message}` : "";
-  return new Error(`Could not start immersive AR.${details} Check this viewer's WebXR and camera permissions, then try again.`);
+  const browserHint = /Android/i.test(navigator.userAgent)
+    ? " On Android, immersive WebXR generally requires Chrome; use the camera-preview option if this browser does not support it."
+    : "";
+  return new Error(`Could not start immersive AR.${details} Check this viewer's WebXR and camera permissions, then try again.${browserHint}`);
 }
 
 function throwCameraError(error) {

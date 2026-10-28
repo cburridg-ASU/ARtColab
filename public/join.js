@@ -19,6 +19,7 @@ const mobileResultPanel = document.querySelector("#mobile-result-panel");
 const mobileShowcaseCanvas = document.querySelector("#mobile-showcase");
 const mobileShowcasePlayers = document.querySelector("#mobile-showcase-players");
 const viewShowcaseArButton = document.querySelector("#view-showcase-ar");
+const viewShowcaseCameraButton = document.querySelector("#view-showcase-camera");
 const resultError = document.querySelector("#result-error");
 const enterArButton = document.querySelector("#enter-ar");
 const cameraPreviewButton = document.querySelector("#camera-preview");
@@ -162,7 +163,9 @@ async function showRoundComplete(prompt, completedResult = null) {
       mobileShowcasePlayers,
     );
     renderedResultsCode = roomCode;
-    viewShowcaseArButton.disabled = savedContributions.every((entry) => entry.objects.length === 0);
+    const hasObjects = savedContributions.some((entry) => entry.objects.length > 0);
+    viewShowcaseArButton.disabled = !hasObjects;
+    viewShowcaseCameraButton.disabled = !hasObjects;
     if (saveWarning) {
       resultError.textContent = saveWarning;
       resultError.hidden = false;
@@ -184,7 +187,9 @@ async function restoreShowcase() {
       savedContributions,
       mobileShowcasePlayers,
     );
-    viewShowcaseArButton.disabled = savedContributions.every((entry) => entry.objects.length === 0);
+    const hasObjects = savedContributions.some((entry) => entry.objects.length > 0);
+    viewShowcaseArButton.disabled = !hasObjects;
+    viewShowcaseCameraButton.disabled = !hasObjects;
   } catch (error) {
     resultError.textContent = error.message;
     resultError.hidden = false;
@@ -196,6 +201,7 @@ async function startAR(mode, contributions = null) {
   const isViewingShowcase = Array.isArray(contributions);
   if (isViewingShowcase) {
     viewShowcaseArButton.disabled = true;
+    viewShowcaseCameraButton.disabled = true;
     showcaseDisposer?.();
     showcaseDisposer = null;
   }
@@ -210,17 +216,17 @@ async function startAR(mode, contributions = null) {
       mode,
       contributions,
       primitiveIndex: primitiveIndex ?? 0,
-      onObjectsChange: (objects) => {
+      onObjectsChange: (objects, placementSpace) => {
         latestObjects = objects;
-        return contributions ? undefined : saveObjects(objects);
+        return contributions ? undefined : saveObjects(objects, placementSpace);
+      },
+      onExit: () => {
+        if (isViewingShowcase) void restoreShowcase();
       },
     });
-    if (isViewingShowcase && session) {
-      session.addEventListener("end", () => restoreShowcase(), { once: true });
-    }
     arError.hidden = true;
     cameraPreviewButton.hidden = true;
-    if (roundComplete) exitArButton.click();
+    if (roundComplete && !isViewingShowcase) exitArButton.click();
   } catch (error) {
     if (roundComplete) {
       resultError.textContent = error.message;
@@ -234,21 +240,26 @@ async function startAR(mode, contributions = null) {
   } finally {
     enterArButton.disabled = false;
     cameraPreviewButton.disabled = false;
+    if (isViewingShowcase) {
+      viewShowcaseArButton.disabled = savedContributions.every((entry) => entry.objects.length === 0);
+      viewShowcaseCameraButton.disabled = viewShowcaseArButton.disabled;
+    }
   }
 }
 
 enterArButton.addEventListener("click", () => startAR("immersive"));
 cameraPreviewButton.addEventListener("click", () => startAR("camera"));
 viewShowcaseArButton.addEventListener("click", () => startAR("immersive", savedContributions));
+viewShowcaseCameraButton.addEventListener("click", () => startAR("camera", savedContributions));
 
 window.setInterval(updateRoundTimer, 1000);
 
-async function saveObjects(objects) {
+async function saveObjects(objects, placementSpace = "player-origin") {
   if (!roomCode || !playerId) return;
   const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ playerId, objects }),
+    body: JSON.stringify({ playerId, objects, placementSpace }),
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Could not save your objects.");

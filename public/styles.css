@@ -385,6 +385,10 @@ h1 span {
   font-size: 0.78rem;
 }
 
+.showcase-viewer {
+  position: relative;
+}
+
 .showcase-canvas {
   display: block;
   width: 100%;
@@ -393,6 +397,28 @@ h1 span {
   border-radius: 8px;
   background: #f5f2e9;
   touch-action: none;
+}
+
+.showcase-zoom-controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 7px;
+}
+
+.showcase-zoom-controls button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid #25241f40;
+  border-radius: 8px;
+  background: #fffdf2e8;
+  color: #25241f;
+  font: inherit;
+  font-size: 1.4rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .showcase-players {
@@ -434,6 +460,10 @@ h1 span {
 .mobile-result-panel .primary-button {
   width: 100%;
   margin-top: 16px;
+}
+
+.mobile-result-panel #view-showcase-camera {
+  width: 100%;
 }
 
 .mobile-showcase-canvas {

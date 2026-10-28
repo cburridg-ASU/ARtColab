@@ -44,10 +44,18 @@
         <section class="mobile-result-panel" id="mobile-result-panel" aria-labelledby="mobile-result-title" hidden>
           <p class="eyebrow">ROUND COMPLETE</p>
           <h2 class="mobile-prompt" id="mobile-result-title">Everyone’s creation</h2>
-          <p class="showcase-caption">Player arrangements share a center. Drag to spin; pinch to zoom.</p>
-          <canvas class="showcase-canvas mobile-showcase-canvas" id="mobile-showcase" aria-label="Combined 3D showcase"></canvas>
+          <p class="showcase-caption">Player starting points align. Drag to rotate; pinch or use the zoom controls.</p>
+          <div class="showcase-viewer">
+            <canvas class="showcase-canvas mobile-showcase-canvas" id="mobile-showcase" aria-label="Combined 3D showcase"></canvas>
+            <div class="showcase-zoom-controls" aria-label="Showcase zoom controls">
+              <button type="button" data-zoom-out aria-label="Zoom out">−</button>
+              <button type="button" data-zoom-in aria-label="Zoom in">+</button>
+            </div>
+          </div>
           <ul class="showcase-players" id="mobile-showcase-players"></ul>
           <button class="primary-button" id="view-showcase-ar" type="button">View combined scene in AR</button>
+          <p class="showcase-caption">If immersive AR is unavailable, camera preview displays the scene without room tracking.</p>
+          <button class="secondary-button" id="view-showcase-camera" type="button">View with camera preview</button>
           <p class="error-message" id="result-error" role="alert" hidden></p>
         </section>
       </section>

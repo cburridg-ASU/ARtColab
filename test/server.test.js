@@ -120,6 +120,9 @@ test("serves host and player screens", async () => {
   assert.match(hostPage, /id="create-room"/);
   assert.match(hostPage, /id="start-session"/);
   assert.match(hostPage, /id="round-duration"/);
+  assert.match(hostPage, /<option value="1" selected>1 minute<\/option>/);
+  assert.match(hostPage, /data-zoom-in/);
+  assert.match(hostPage, /data-zoom-out/);
   assert.match(hostPage, /<option value="10">10 minutes<\/option>/);
   assert.match(hostPage, /id="round-timer"/);
   assert.match(hostPage, /id="round-complete"/);
@@ -135,6 +138,9 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /id="ar-round-timer"/);
   assert.match(joinPage, /id="mobile-showcase"/);
   assert.match(joinPage, /id="view-showcase-ar"/);
+  assert.match(joinPage, /id="view-showcase-camera"/);
+  assert.match(joinPage, /data-zoom-in/);
+  assert.match(joinPage, /data-zoom-out/);
   assert.match(joinPage, /id="exit-ar"/);
   assert.match(joinPage, /Time’s up!/);
   assert.match(joinPage, /Your assigned primitive/);
@@ -155,7 +161,10 @@ test("serves the combined showcase module", async () => {
   assert.match(module, /export async function renderShowcase/);
   assert.match(module, /createPrimitive/);
   assert.doesNotMatch(module, /GLTFLoader/);
-  assert.match(module, /playerGroup\.position\.set\(-center\.x, -bounds\.min\.y, -center\.z\)/);
+  assert.match(module, /usesPlayerOrigin \? 0 : -center\.x/);
+  assert.match(module, /const zoomBy = \(factor\) =>/);
+  assert.match(module, /data-zoom-in/);
+  assert.match(module, /zoomBy\(Math\.exp\(event\.deltaY \* 0\.001\)\)/);
 });
 
 test("serves the primitive geometry factory", async () => {
@@ -186,6 +195,8 @@ test("serves the AR module and Three.js runtime", async () => {
     fetch(`${baseUrl}/vendor/three-examples/utils/SkeletonUtils.js`),
   ]);
   const arModule = await arResponse.text();
+  const joinModuleResponse = await fetch(`${baseUrl}/join.js`);
+  const joinModule = await joinModuleResponse.text();
   const threeModule = await threeResponse.text();
   const threeCoreModule = await threeCoreResponse.text();
   const loaderModule = await loaderResponse.text();
@@ -216,7 +227,11 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /getHitTestResults/);
   assert.match(arModule, /selectstart/);
   assert.match(arModule, /scaleSelected/);
-  assert.match(arModule, /playerGroup\.position\.set\(-center\.x, -bounds\.min\.y, -center\.z\)/);
+  assert.match(arModule, /placementOrigin/);
+  assert.match(arModule, /placementSpace === "player-origin"/);
+  assert.match(arModule, /Camera preview of the combined scene/);
+  assert.match(arModule, /renderer\.domElement\.style\.pointerEvents = isShowcaseMode \? "none" : "auto"/);
+  assert.match(arModule, /Android/i);
   assert.match(arModule, /primitiveIndex/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
@@ -231,6 +246,8 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.equal(skeletonUtilsResponse.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.equal(joinPageResponse.status, 200);
   assert.match(joinPage, /"three": "\/vendor\/three\.module\.js"/);
+  assert.match(joinModule, /viewShowcaseCameraButton\.addEventListener\("click", \(\) => startAR\("camera", savedContributions\)\)/);
+  assert.match(joinModule, /roundComplete && !isViewingShowcase/);
 });
 
 test("serves the supplied furniture thumbnails and GLB models", async () => {
@@ -464,6 +481,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       playerId: player.playerId,
+      placementSpace: "player-origin",
       objects: [{
         modelIndex: 0,
         scale: 1.25,
@@ -473,6 +491,16 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     }),
   });
   assert.equal(saveResponse.status, 200);
+  const invalidPlacementSpaceSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      playerId: player.playerId,
+      placementSpace: "other-player",
+      objects: [],
+    }),
+  });
+  assert.equal(invalidPlacementSpaceSave.status, 400);
   const mismatchedPrimitiveSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -526,6 +554,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   assert.deepEqual(result.contributions, [{
     playerId: player.playerId,
     playerName: "Alex",
+    placementSpace: "player-origin",
     objects: [{
       modelIndex: 0,
       scale: 1.25,
