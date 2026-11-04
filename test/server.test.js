@@ -108,7 +108,6 @@ test("serves the stylesheet", async () => {
   assert.match(css, /@media \(max-width: 600px\)/);
   assert.match(css, /\.ar-catalog[\s\S]*touch-action: pan-x/);
   assert.match(css, /\.ar-item\.is-selected/);
-  assert.match(css, /\.immersive-ar-active body > main/);
 });
 
 test("serves host and player screens", async () => {
@@ -220,10 +219,7 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /className = "ar-camera"/);
   assert.match(arModule, /async function endSession\(\)/);
   assert.match(arModule, /requiredFeatures: \["dom-overlay"\]/);
-  assert.match(arModule, /optionalFeatures: \["hit-test", "light-estimation", "anchors"\]/);
-  assert.match(arModule, /domOverlay: \{ root: document\.body \}/);
-  assert.match(arModule, /document\.body\.append\(overlay\)/);
-  assert.match(arModule, /restoreOverlayPosition\(\)/);
+  assert.match(arModule, /optionalFeatures: \["hit-test", "light-estimation"\]/);
   assert.doesNotMatch(arModule, /requiredFeatures: \["hit-test", "dom-overlay"\]/);
   assert.match(arModule, /if \(!session\.domOverlayState\)/);
   assert.ok(
@@ -249,9 +245,6 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
   assert.match(arModule, /showcasePosition\.y -= 1\.3/);
   assert.match(arModule, /showcaseForward\.y = 0/);
-  assert.match(arModule, /frame\.createAnchor\(anchorTransform, referenceSpace\)/);
-  assert.match(arModule, /frame\.getPose\(showcaseAnchor\.anchorSpace, referenceSpace\)/);
-  assert.match(arModule, /Could not anchor the combined AR scene/);
   assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);

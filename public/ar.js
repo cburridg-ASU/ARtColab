@@ -39,8 +39,6 @@ export async function enterAR({
   let sessionRequest;
   let cameraStream;
   let cameraVideo;
-  const overlayParent = overlay.parentNode;
-  const overlayNextSibling = overlay.nextSibling;
 
   if (usingWebXR) {
     if (!navigator.xr) {
@@ -50,14 +48,12 @@ export async function enterAR({
       throw new Error(`This browser does not expose WebXR immersive AR. Open the game in a compatible immersive browser, then allow camera and motion access.${browserHint}`);
     }
     try {
-      document.body.append(overlay);
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
         requiredFeatures: ["dom-overlay"],
-        optionalFeatures: ["hit-test", "light-estimation", "anchors"],
-        domOverlay: { root: document.body },
+        optionalFeatures: ["hit-test", "light-estimation"],
+        domOverlay: { root: overlay },
       });
     } catch (error) {
-      restoreOverlayPosition();
       console.error("Could not request an immersive AR session:", error);
       throw immersiveSessionError(error);
     }
@@ -140,21 +136,11 @@ export async function enterAR({
   const showcaseRotation = new THREE.Quaternion();
   const showcaseScale = new THREE.Vector3();
   const showcaseForward = new THREE.Vector3();
-  let showcaseAnchor = null;
   let placementOrigin = null;
   let dragging = false;
   let closed = false;
   let isActive = false;
   let exitNotified = false;
-
-  function restoreOverlayPosition() {
-    if (!overlayParent) return;
-    if (overlayNextSibling?.parentNode === overlayParent) {
-      overlayParent.insertBefore(overlay, overlayNextSibling);
-    } else {
-      overlayParent.append(overlay);
-    }
-  }
 
   function setSelectedObject(object) {
     selectedObject = object;
@@ -479,13 +465,10 @@ export async function enterAR({
     renderer.domElement.removeEventListener("pointercancel", onEndDrag);
     window.removeEventListener("resize", onResize);
     hitTestSource?.cancel();
-    showcaseAnchor?.delete();
-    showcaseAnchor = null;
     session = null;
     overlay.classList.remove("is-active", "camera-preview");
     overlay.hidden = true;
     document.documentElement.classList.remove("immersive-ar-active");
-    restoreOverlayPosition();
     renderer.setAnimationLoop(null);
     renderer.dispose();
     renderer.domElement.remove();
@@ -593,37 +576,6 @@ export async function enterAR({
           showcaseGroup.matrix.compose(showcasePosition, showcaseRotation, showcaseScale);
           showcaseGroup.matrixAutoUpdate = false;
           scene.add(showcaseGroup);
-          if (typeof frame.createAnchor === "function" && typeof XRRigidTransform === "function") {
-            const anchorTransform = new XRRigidTransform(
-              {
-                x: showcasePosition.x,
-                y: showcasePosition.y,
-                z: showcasePosition.z,
-              },
-              {
-                x: showcaseRotation.x,
-                y: showcaseRotation.y,
-                z: showcaseRotation.z,
-                w: showcaseRotation.w,
-              },
-            );
-            frame.createAnchor(anchorTransform, referenceSpace).then((anchor) => {
-              if (session?.ended || closed) {
-                anchor.delete();
-                return;
-              }
-              showcaseAnchor = anchor;
-            }).catch((error) => {
-              console.warn("Could not anchor the combined AR scene; keeping it fixed in local space:", error);
-            });
-          }
-        }
-        if (isShowcaseMode && showcaseGroup?.parent && showcaseAnchor) {
-          const anchorPose = frame.getPose(showcaseAnchor.anchorSpace, referenceSpace);
-          if (anchorPose) {
-            showcaseGroup.matrix.fromArray(anchorPose.transform.matrix);
-            showcaseGroup.matrixWorldNeedsUpdate = true;
-          }
         }
       }
       if (hitTestSource && referenceSpace) {
