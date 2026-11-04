@@ -223,6 +223,16 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.doesNotMatch(arModule, /requiredFeatures: \["hit-test", "dom-overlay"\]/);
   assert.match(arModule, /if \(!session\.domOverlayState\)/);
   assert.ok(
+    arModule.indexOf("overlay.hidden = false;") <
+      arModule.indexOf('navigator.xr.requestSession("immersive-ar"'),
+    "show the DOM overlay before requesting the immersive session",
+  );
+  assert.ok(
+    arModule.indexOf("document.body.append(overlay);") <
+      arModule.indexOf('navigator.xr.requestSession("immersive-ar"'),
+    "attach the DOM overlay to the XR document before requesting the session",
+  );
+  assert.ok(
     arModule.indexOf("const catalogButtons = primitives.map") <
       arModule.indexOf('navigator.xr.requestSession("immersive-ar"'),
     "build catalog controls before entering immersive AR",

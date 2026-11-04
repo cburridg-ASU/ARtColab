@@ -13,6 +13,8 @@ export async function enterAR({
 }) {
   const usingWebXR = mode === "immersive";
   const isShowcaseMode = Array.isArray(contributions);
+  const overlayParent = overlay.parentElement;
+  const overlayNextSibling = overlay.nextSibling;
   if (!Number.isInteger(primitiveIndex) || !primitives[primitiveIndex]) {
     throw new Error("Your assigned primitive is unavailable. Rejoin the room and try again.");
   }
@@ -48,12 +50,18 @@ export async function enterAR({
       throw new Error(`This browser does not expose WebXR immersive AR. Open the game in a compatible immersive browser, then allow camera and motion access.${browserHint}`);
     }
     try {
+      overlay.hidden = false;
+      overlay.classList.add("is-active");
+      document.body.append(overlay);
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
         requiredFeatures: ["dom-overlay"],
         optionalFeatures: ["hit-test", "light-estimation"],
         domOverlay: { root: overlay },
       });
     } catch (error) {
+      overlay.hidden = true;
+      overlay.classList.remove("is-active");
+      overlayParent?.insertBefore(overlay, overlayNextSibling);
       console.error("Could not request an immersive AR session:", error);
       throw immersiveSessionError(error);
     }
@@ -408,7 +416,6 @@ export async function enterAR({
   selectPrimitive(primitiveIndex);
   overlay.classList.toggle("camera-preview", !usingWebXR);
   overlay.classList.toggle("ar-showcase-mode", isShowcaseMode);
-  overlay.classList.add("is-active");
   overlay.hidden = false;
   document.documentElement.classList.add("immersive-ar-active");
   if (cameraVideo) document.body.append(cameraVideo);
@@ -469,6 +476,7 @@ export async function enterAR({
     overlay.classList.remove("is-active", "camera-preview");
     overlay.hidden = true;
     document.documentElement.classList.remove("immersive-ar-active");
+    overlayParent?.insertBefore(overlay, overlayNextSibling);
     renderer.setAnimationLoop(null);
     renderer.dispose();
     renderer.domElement.remove();
