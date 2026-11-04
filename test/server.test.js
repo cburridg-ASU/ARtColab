@@ -218,8 +218,15 @@ test("serves the AR module and Three.js runtime", async () => {
   );
   assert.match(arModule, /className = "ar-camera"/);
   assert.match(arModule, /async function endSession\(\)/);
-  assert.match(arModule, /optionalFeatures: \["hit-test", "dom-overlay", "light-estimation"\]/);
-  assert.doesNotMatch(arModule, /requiredFeatures: \["hit-test"\]/);
+  assert.match(arModule, /requiredFeatures: \["dom-overlay"\]/);
+  assert.match(arModule, /optionalFeatures: \["hit-test", "light-estimation"\]/);
+  assert.doesNotMatch(arModule, /requiredFeatures: \["hit-test", "dom-overlay"\]/);
+  assert.match(arModule, /if \(!session\.domOverlayState\)/);
+  assert.ok(
+    arModule.indexOf("const catalogButtons = primitives.map") <
+      arModule.indexOf('navigator.xr.requestSession("immersive-ar"'),
+    "build catalog controls before entering immersive AR",
+  );
   assert.match(arModule, /placeInFrontOfViewer/);
   assert.match(arModule, /Surface detection is unavailable/);
   assert.match(arModule, /premultipliedAlpha: false/);

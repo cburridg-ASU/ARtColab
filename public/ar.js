@@ -16,6 +16,26 @@ export async function enterAR({
   if (!Number.isInteger(primitiveIndex) || !primitives[primitiveIndex]) {
     throw new Error("Your assigned primitive is unavailable. Rejoin the room and try again.");
   }
+  const catalog = overlay.querySelector("#ar-catalog");
+  catalog.replaceChildren();
+  const catalogButtons = primitives.map((primitive, index) => {
+    const button = document.createElement("button");
+    const shape = document.createElement("span");
+    const name = document.createElement("span");
+    button.className = "ar-item";
+    button.type = "button";
+    button.setAttribute("aria-label", `Select ${primitive.name}`);
+    button.setAttribute("aria-pressed", String(index === primitiveIndex));
+    button.classList.toggle("is-selected", index === primitiveIndex);
+    button.dataset.primitiveIndex = String(index);
+    shape.className = "ar-item-shape";
+    shape.setAttribute("aria-hidden", "true");
+    shape.style.setProperty("--primitive-color", `#${primitive.color.toString(16).padStart(6, "0")}`);
+    name.textContent = primitive.name;
+    button.append(shape, name);
+    catalog.append(button);
+    return button;
+  });
   let sessionRequest;
   let cameraStream;
   let cameraVideo;
@@ -29,7 +49,8 @@ export async function enterAR({
     }
     try {
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
-        optionalFeatures: ["hit-test", "dom-overlay", "light-estimation"],
+        requiredFeatures: ["dom-overlay"],
+        optionalFeatures: ["hit-test", "light-estimation"],
         domOverlay: { root: overlay },
       });
     } catch (error) {
@@ -93,7 +114,6 @@ export async function enterAR({
   scene.add(controller);
 
   const placedObjects = new Set();
-  const catalog = overlay.querySelector("#ar-catalog");
   const addButton = overlay.querySelector("#add-ar-object");
   const scaleDownButton = overlay.querySelector("#scale-ar-object-down");
   const scaleUpButton = overlay.querySelector("#scale-ar-object-up");
@@ -107,24 +127,6 @@ export async function enterAR({
   let showcaseGroup = null;
   let saveTimer = null;
   let selectedModelIndex = primitiveIndex;
-  const catalogButtons = primitives.map((primitive, index) => {
-    const button = document.createElement("button");
-    const shape = document.createElement("span");
-    const name = document.createElement("span");
-    button.className = "ar-item";
-    button.type = "button";
-    button.setAttribute("aria-label", `Select ${primitive.name}`);
-    button.setAttribute("aria-pressed", String(index === primitiveIndex));
-    button.classList.toggle("is-selected", index === primitiveIndex);
-    button.dataset.primitiveIndex = String(index);
-    shape.className = "ar-item-shape";
-    shape.setAttribute("aria-hidden", "true");
-    shape.style.setProperty("--primitive-color", `#${primitive.color.toString(16).padStart(6, "0")}`);
-    name.textContent = primitive.name;
-    button.append(shape, name);
-    catalog.append(button);
-    return button;
-  });
   let selectedObject = null;
   let hitTestSource = null;
   let session = null;
@@ -512,6 +514,9 @@ export async function enterAR({
   if (usingWebXR) {
     try {
       session = await sessionRequest;
+      if (!session.domOverlayState) {
+        throw new Error("This XR browser started without DOM overlay support, so AR controls cannot be displayed. Try Chrome on Android or use camera preview.");
+      }
       session.addEventListener("end", onSessionEnded, { once: true });
       await renderer.xr.setSession(session);
       xrReferenceSpace = renderer.xr.getReferenceSpace();
