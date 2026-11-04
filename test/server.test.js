@@ -108,6 +108,7 @@ test("serves the stylesheet", async () => {
   assert.match(css, /@media \(max-width: 600px\)/);
   assert.match(css, /\.ar-catalog[\s\S]*touch-action: pan-x/);
   assert.match(css, /\.ar-item\.is-selected/);
+  assert.match(css, /\.immersive-ar-active body > main/);
 });
 
 test("serves host and player screens", async () => {
@@ -220,6 +221,9 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /async function endSession\(\)/);
   assert.match(arModule, /requiredFeatures: \["dom-overlay"\]/);
   assert.match(arModule, /optionalFeatures: \["hit-test", "light-estimation"\]/);
+  assert.match(arModule, /domOverlay: \{ root: document\.body \}/);
+  assert.match(arModule, /document\.body\.append\(overlay\)/);
+  assert.match(arModule, /restoreOverlayPosition\(\)/);
   assert.doesNotMatch(arModule, /requiredFeatures: \["hit-test", "dom-overlay"\]/);
   assert.match(arModule, /if \(!session\.domOverlayState\)/);
   assert.ok(

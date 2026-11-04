@@ -39,6 +39,8 @@ export async function enterAR({
   let sessionRequest;
   let cameraStream;
   let cameraVideo;
+  const overlayParent = overlay.parentNode;
+  const overlayNextSibling = overlay.nextSibling;
 
   if (usingWebXR) {
     if (!navigator.xr) {
@@ -48,12 +50,14 @@ export async function enterAR({
       throw new Error(`This browser does not expose WebXR immersive AR. Open the game in a compatible immersive browser, then allow camera and motion access.${browserHint}`);
     }
     try {
+      document.body.append(overlay);
       sessionRequest = navigator.xr.requestSession("immersive-ar", {
         requiredFeatures: ["dom-overlay"],
         optionalFeatures: ["hit-test", "light-estimation"],
-        domOverlay: { root: overlay },
+        domOverlay: { root: document.body },
       });
     } catch (error) {
+      restoreOverlayPosition();
       console.error("Could not request an immersive AR session:", error);
       throw immersiveSessionError(error);
     }
@@ -141,6 +145,15 @@ export async function enterAR({
   let closed = false;
   let isActive = false;
   let exitNotified = false;
+
+  function restoreOverlayPosition() {
+    if (!overlayParent) return;
+    if (overlayNextSibling?.parentNode === overlayParent) {
+      overlayParent.insertBefore(overlay, overlayNextSibling);
+    } else {
+      overlayParent.append(overlay);
+    }
+  }
 
   function setSelectedObject(object) {
     selectedObject = object;
@@ -469,6 +482,7 @@ export async function enterAR({
     overlay.classList.remove("is-active", "camera-preview");
     overlay.hidden = true;
     document.documentElement.classList.remove("immersive-ar-active");
+    restoreOverlayPosition();
     renderer.setAnimationLoop(null);
     renderer.dispose();
     renderer.domElement.remove();
