@@ -311,7 +311,8 @@ const server = http.createServer(async (request, response) => {
       const objectsAreValid = body.objects.every((object) =>
         object &&
         Number.isInteger(object.modelIndex) &&
-        object.modelIndex === player.primitiveIndex &&
+        object.modelIndex >= 0 &&
+        object.modelIndex < 8 &&
         Number.isFinite(object.scale) &&
         object.scale >= 0.35 &&
         object.scale <= 3 &&

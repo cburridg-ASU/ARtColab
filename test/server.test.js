@@ -106,6 +106,8 @@ test("serves the stylesheet", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /^text\/css; charset=utf-8$/);
   assert.match(css, /@media \(max-width: 600px\)/);
+  assert.match(css, /\.ar-catalog[\s\S]*touch-action: pan-x/);
+  assert.match(css, /\.ar-item\.is-selected/);
 });
 
 test("serves host and player screens", async () => {
@@ -143,9 +145,8 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /data-zoom-out/);
   assert.match(joinPage, /id="exit-ar"/);
   assert.match(joinPage, /Time’s up!/);
-  assert.match(joinPage, /Your assigned primitive/);
-  assert.match(joinPage, /id="ar-primitive-name"/);
-  assert.match(joinPage, /id="player-primitive-name"/);
+  assert.match(joinPage, /Choose a primitive to place/);
+  assert.match(joinPage, /id="ar-catalog"/);
   assert.doesNotMatch(joinPage, /data-model-index/);
   assert.match(joinPage, /id="add-ar-object"/);
   assert.match(joinPage, /id="scale-ar-object-down"/);
@@ -233,6 +234,11 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /renderer\.domElement\.style\.pointerEvents = isShowcaseMode \? "none" : "auto"/);
   assert.match(arModule, /Android/i);
   assert.match(arModule, /primitiveIndex/);
+  assert.match(arModule, /primitives\.map\(\(primitive, index\) =>/);
+  assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
+  assert.match(arModule, /showcasePosition\.y -= 1\.3/);
+  assert.match(arModule, /showcaseForward\.y = 0/);
+  assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
   assert.equal(threeCoreResponse.status, 200);
@@ -501,11 +507,12 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     }),
   });
   assert.equal(invalidPlacementSpaceSave.status, 400);
-  const mismatchedPrimitiveSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+  const otherPlayerPrimitiveSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       playerId: player.playerId,
+      placementSpace: "player-origin",
       objects: [{
         modelIndex: secondPlayer.primitiveIndex,
         scale: 1,
@@ -514,7 +521,7 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
       }],
     }),
   });
-  assert.equal(mismatchedPrimitiveSave.status, 400);
+  assert.equal(otherPlayerPrimitiveSave.status, 200);
   const invalidSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -556,10 +563,10 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     playerName: "Alex",
     placementSpace: "player-origin",
     objects: [{
-      modelIndex: 0,
-      scale: 1.25,
-      position: [1.25, 0.5, -2],
-      quaternion: [0, 0.7071068, 0, 0.7071068],
+      modelIndex: 1,
+      scale: 1,
+      position: [0, 0, 0],
+      quaternion: [0, 0, 0, 1],
     }],
   }]);
 

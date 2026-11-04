@@ -57,13 +57,6 @@ export async function enterAR({
       throwCameraError(error);
     }
   }
-  if (isShowcaseMode && !usingWebXR) {
-    showcaseGroup = await createShowcaseGroup();
-    showcaseGroup.position.set(0, -0.25, -1.5);
-    scene.add(showcaseGroup);
-    controlsHint.textContent = "Camera preview of the combined scene. Exit to return to results.";
-  }
-
   const renderer = new THREE.WebGLRenderer({
     alpha: true,
     antialias: true,
@@ -100,6 +93,7 @@ export async function enterAR({
   scene.add(controller);
 
   const placedObjects = new Set();
+  const catalog = overlay.querySelector("#ar-catalog");
   const addButton = overlay.querySelector("#add-ar-object");
   const scaleDownButton = overlay.querySelector("#scale-ar-object-down");
   const scaleUpButton = overlay.querySelector("#scale-ar-object-up");
@@ -112,12 +106,34 @@ export async function enterAR({
   const intersection = new THREE.Vector3();
   let showcaseGroup = null;
   let saveTimer = null;
-  const selectedModelIndex = primitiveIndex;
+  let selectedModelIndex = primitiveIndex;
+  const catalogButtons = primitives.map((primitive, index) => {
+    const button = document.createElement("button");
+    const shape = document.createElement("span");
+    const name = document.createElement("span");
+    button.className = "ar-item";
+    button.type = "button";
+    button.setAttribute("aria-label", `Select ${primitive.name}`);
+    button.setAttribute("aria-pressed", String(index === primitiveIndex));
+    button.classList.toggle("is-selected", index === primitiveIndex);
+    button.dataset.primitiveIndex = String(index);
+    shape.className = "ar-item-shape";
+    shape.setAttribute("aria-hidden", "true");
+    shape.style.setProperty("--primitive-color", `#${primitive.color.toString(16).padStart(6, "0")}`);
+    name.textContent = primitive.name;
+    button.append(shape, name);
+    catalog.append(button);
+    return button;
+  });
   let selectedObject = null;
   let hitTestSource = null;
   let session = null;
   let xrReferenceSpace = null;
   const xrViewerTransform = new THREE.Matrix4();
+  const showcasePosition = new THREE.Vector3();
+  const showcaseRotation = new THREE.Quaternion();
+  const showcaseScale = new THREE.Vector3();
+  const showcaseForward = new THREE.Vector3();
   let placementOrigin = null;
   let dragging = false;
   let closed = false;
@@ -135,6 +151,17 @@ export async function enterAR({
     if (!isActive || exitNotified) return;
     exitNotified = true;
     onExit();
+  }
+
+  function selectPrimitive(index) {
+    if (!primitives[index]) return;
+    selectedModelIndex = index;
+    for (const [buttonIndex, button] of catalogButtons.entries()) {
+      const selected = buttonIndex === index;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    }
+    controlsHint.textContent = `Selected ${primitives[index].name}. Aim at a surface and tap to place.`;
   }
 
   function placeSelected(transform) {
@@ -358,6 +385,9 @@ export async function enterAR({
     event.preventDefault();
     event.stopPropagation();
   };
+  const onPrimitiveSelect = (event) => {
+    selectPrimitive(Number(event.currentTarget.dataset.primitiveIndex));
+  };
   const overlayButtons = Array.from(overlay.querySelectorAll("button"));
   const onPlaceClick = () => placeFromReticle();
   const onScaleDown = () => scaleSelected(0.85);
@@ -373,7 +403,7 @@ export async function enterAR({
   };
 
   promptElement.textContent = prompt;
-  overlay.querySelector("#ar-primitive-name").textContent = primitives[primitiveIndex].name;
+  selectPrimitive(primitiveIndex);
   overlay.classList.toggle("camera-preview", !usingWebXR);
   overlay.classList.toggle("ar-showcase-mode", isShowcaseMode);
   overlay.classList.add("is-active");
@@ -384,6 +414,9 @@ export async function enterAR({
 
   for (const button of overlayButtons) {
     button.addEventListener("beforexrselect", onBeforeXRSelect);
+  }
+  for (const button of catalogButtons) {
+    button.addEventListener("click", onPrimitiveSelect);
   }
   addButton.addEventListener("click", onPlaceClick);
   scaleDownButton.addEventListener("click", onScaleDown);
@@ -414,6 +447,9 @@ export async function enterAR({
     exitButton.removeEventListener("click", endSession);
     for (const button of overlayButtons) {
       button.removeEventListener("beforexrselect", onBeforeXRSelect);
+    }
+    for (const button of catalogButtons) {
+      button.removeEventListener("click", onPrimitiveSelect);
     }
     addButton.removeEventListener("click", onPlaceClick);
     scaleDownButton.removeEventListener("click", onScaleDown);
@@ -489,7 +525,7 @@ export async function enterAR({
       }
       if (isShowcaseMode) {
         showcaseGroup = await createShowcaseGroup();
-        controlsHint.textContent = "Viewing the saved combined scene. Exit AR to return to the results.";
+        controlsHint.textContent = "Combined scene grounded in front of you. Exit AR to return to results.";
       }
     } catch (error) {
       if (session) await session.end().catch((endError) => {
@@ -503,7 +539,7 @@ export async function enterAR({
   if (isShowcaseMode && !usingWebXR) {
     try {
       showcaseGroup = await createShowcaseGroup();
-      showcaseGroup.position.set(0, -0.25, -1.5);
+      showcaseGroup.position.set(0, -1.3, -1.5);
       scene.add(showcaseGroup);
       controlsHint.textContent = "Camera preview of the combined scene. Exit to return to results.";
     } catch (error) {
@@ -525,9 +561,14 @@ export async function enterAR({
       if (viewerPose) {
         xrViewerTransform.fromArray(viewerPose.transform.matrix);
         if (isShowcaseMode && showcaseGroup && !showcaseGroup.parent) {
-          showcaseGroup.matrix.copy(
-            xrViewerTransform.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, -1.5)),
-          );
+          xrViewerTransform.decompose(showcasePosition, showcaseRotation, showcaseScale);
+          showcaseForward.set(0, 0, -1).applyQuaternion(showcaseRotation);
+          showcaseForward.y = 0;
+          if (showcaseForward.lengthSq() < 0.001) showcaseForward.set(0, 0, -1);
+          showcaseForward.normalize();
+          showcasePosition.addScaledVector(showcaseForward, 1.5);
+          showcasePosition.y -= 1.3;
+          showcaseGroup.matrix.compose(showcasePosition, showcaseRotation, showcaseScale);
           showcaseGroup.matrixAutoUpdate = false;
           scene.add(showcaseGroup);
         }
