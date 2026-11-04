@@ -220,7 +220,7 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /className = "ar-camera"/);
   assert.match(arModule, /async function endSession\(\)/);
   assert.match(arModule, /requiredFeatures: \["dom-overlay"\]/);
-  assert.match(arModule, /optionalFeatures: \["hit-test", "light-estimation"\]/);
+  assert.match(arModule, /optionalFeatures: \["hit-test", "light-estimation", "anchors"\]/);
   assert.match(arModule, /domOverlay: \{ root: document\.body \}/);
   assert.match(arModule, /document\.body\.append\(overlay\)/);
   assert.match(arModule, /restoreOverlayPosition\(\)/);
@@ -249,6 +249,9 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
   assert.match(arModule, /showcasePosition\.y -= 1\.3/);
   assert.match(arModule, /showcaseForward\.y = 0/);
+  assert.match(arModule, /frame\.createAnchor\(anchorTransform, referenceSpace\)/);
+  assert.match(arModule, /frame\.getPose\(showcaseAnchor\.anchorSpace, referenceSpace\)/);
+  assert.match(arModule, /Could not anchor the combined AR scene/);
   assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
