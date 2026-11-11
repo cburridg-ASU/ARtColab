@@ -1,0 +1,194 @@
+[
+  {
+    "name": "Building (Red)",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/building_red.gltf"
+  },
+  {
+    "name": "Armchair",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/armchair_pillows.gltf"
+  },
+  {
+    "name": "Bomb (Red)",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/red/bomb_A_red.gltf"
+  },
+  {
+    "name": "Lantern",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/lantern.gltf"
+  },
+  {
+    "name": "Meeple (Blue)",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/meeple_blue.gltf"
+  },
+  {
+    "name": "Couch",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/couch.gltf"
+  },
+  {
+    "name": "Heart (Green)",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/green/heart_green.gltf"
+  },
+  {
+    "name": "Axe",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/axe.gltf"
+  },
+  {
+    "name": "D20 (Blue)",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/D20_blue.gltf"
+  },
+  {
+    "name": "Cactus",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/cactus_medium_A.gltf"
+  },
+  {
+    "name": "Diamond (Blue)",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/blue/diamond_blue.gltf"
+  },
+  {
+    "name": "Rolled Map",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/map_rolled.gltf"
+  },
+  {
+    "name": "Pawn (Yellow)",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/pawn_A_yellow.gltf"
+  },
+  {
+    "name": "Single Bed",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/bed_single_A.gltf"
+  },
+  {
+    "name": "Hoop (Blue)",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/blue/hoop_blue.gltf"
+  },
+  {
+    "name": "Anvil",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/anvil.gltf"
+  },
+  {
+    "name": "Flag (Green)",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/flag_A_green.gltf"
+  },
+  {
+    "name": "Floor Lamp",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/lamp_standing.gltf"
+  },
+  {
+    "name": "Cone (Green)",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/green/cone_green.gltf"
+  },
+  {
+    "name": "Hammer",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/hammer.gltf"
+  },
+  {
+    "name": "Hourglass",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/hourglass.gltf"
+  },
+  {
+    "name": "Book Set",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/book_set.gltf"
+  },
+  {
+    "name": "Sign",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/neutral/sign.gltf"
+  },
+  {
+    "name": "Magnifying Glass",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/magnifying_glass.gltf"
+  },
+  {
+    "name": "Gold Coin",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/coin_gold.gltf"
+  },
+  {
+    "name": "Striped Rug",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/rug_rectangle_stripes_A.gltf"
+  },
+  {
+    "name": "Structure",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/neutral/structure_C.gltf"
+  },
+  {
+    "name": "Torch",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/torch.gltf"
+  },
+  {
+    "name": "Tall Container",
+    "category": "Board Game Bits",
+    "icon": "BG",
+    "url": "/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/container_A_tall.gltf"
+  },
+  {
+    "name": "Long Table",
+    "category": "Furniture Bits",
+    "icon": "FB",
+    "url": "/3d-assets/KayKit_Furniture_Bits_1.0_FREE/Assets/gltf/table_medium_long.gltf"
+  },
+  {
+    "name": "Spring",
+    "category": "Platformer Pack",
+    "icon": "PF",
+    "url": "/3d-assets/KayKit_Platformer_Pack_1.0_FREE/Assets/gltf/neutral/spring.gltf"
+  },
+  {
+    "name": "Rope Bundle",
+    "category": "RPG Tools Bits",
+    "icon": "RPG",
+    "url": "/3d-assets/KayKit_RPGToolsBits_1.0_FREE/Assets/gltf/rope_bundle_A.gltf"
+  }
+]

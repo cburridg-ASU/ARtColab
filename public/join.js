@@ -1,5 +1,5 @@
 import { enterAR } from "/ar.js";
-import { primitives } from "/primitives.js";
+import { getModelCatalog } from "/models.js";
 import { renderShowcase } from "/showcase.js";
 
 const joinForm = document.querySelector("#join-form");
@@ -11,7 +11,7 @@ const joinedName = document.querySelector("#joined-name");
 const connectionElement = document.querySelector("#player-connection");
 const gamePanel = document.querySelector("#mobile-game-panel");
 const mobilePrompt = document.querySelector("#mobile-prompt");
-const playerPrimitiveName = document.querySelector("#player-primitive-name");
+const playerModelName = document.querySelector("#player-model-name");
 const mobileTimerElement = document.querySelector("#mobile-round-timer");
 const arTimerElement = document.querySelector("#ar-round-timer");
 const mobileCompleteElement = document.querySelector("#mobile-round-complete");
@@ -30,7 +30,7 @@ const exitArButton = document.querySelector("#exit-ar");
 
 let playerId;
 let roomCode;
-let primitiveIndex = null;
+let modelIndex = null;
 let timerEndsAt = null;
 let roundComplete = false;
 let latestObjects = [];
@@ -39,6 +39,15 @@ let showcaseDisposer = null;
 let renderedResultsCode = null;
 let loadingResultsCode = null;
 let socket;
+let modelCatalog = [];
+let modelCatalogError = null;
+const modelCatalogReady = getModelCatalog()
+  .then((catalog) => {
+    modelCatalog = catalog;
+  })
+  .catch((error) => {
+    modelCatalogError = error;
+  });
 
 function updateRoundTimer() {
   if (!timerEndsAt) return;
@@ -108,8 +117,8 @@ function connectToRoom() {
       errorElement.hidden = false;
       return;
     }
-    primitiveIndex = player.primitiveIndex;
-    playerPrimitiveName.textContent = primitives[primitiveIndex]?.name || "Unavailable";
+    modelIndex = player.modelIndex;
+    playerModelName.textContent = modelCatalog[modelIndex]?.name || "Unavailable";
     if (message.phase === "active") {
       timerEndsAt = message.timerEndsAt;
       showActivePrompt(message.prompt);
@@ -194,6 +203,14 @@ async function restoreShowcase() {
 
 async function startAR(mode, contributions = null) {
   if (roundComplete && !contributions) return;
+  if (!modelCatalog.length) {
+    const error = modelCatalogError || new Error("The 3D model catalog is still loading. Try again.");
+    arError.textContent = error.message;
+    arError.hidden = false;
+    resultError.textContent = error.message;
+    resultError.hidden = false;
+    return;
+  }
   const isViewingShowcase = Array.isArray(contributions);
   if (isViewingShowcase) {
     viewShowcaseArButton.disabled = true;
@@ -211,7 +228,8 @@ async function startAR(mode, contributions = null) {
       exitButton: exitArButton,
       mode,
       contributions,
-      primitiveIndex: primitiveIndex ?? 0,
+      catalog: modelCatalog,
+      modelIndex: modelIndex ?? 0,
       onObjectsChange: (objects, placementSpace) => {
         latestObjects = objects;
         return contributions ? undefined : saveObjects(objects, placementSpace);
@@ -276,10 +294,12 @@ joinForm.addEventListener("submit", async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Could not join the room.");
+    await modelCatalogReady;
+    if (!modelCatalog.length) throw modelCatalogError || new Error("Could not load the 3D model catalog.");
     playerId = result.playerId;
-    primitiveIndex = result.primitiveIndex;
+    modelIndex = result.modelIndex;
     joinedName.textContent = result.name;
-    playerPrimitiveName.textContent = primitives[primitiveIndex]?.name || "Unavailable";
+    playerModelName.textContent = modelCatalog[modelIndex]?.name || "Unavailable";
     joinForm.hidden = true;
     joinedPanel.hidden = false;
     connectToRoom();

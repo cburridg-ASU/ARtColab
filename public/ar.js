@@ -1,5 +1,5 @@
 import * as THREE from "/vendor/three.module.js";
-import { createPrimitive, primitives } from "/primitives.js";
+import { createModel } from "/models.js";
 
 export async function enterAR({
   overlay,
@@ -7,7 +7,8 @@ export async function enterAR({
   exitButton,
   mode = "immersive",
   contributions = null,
-  primitiveIndex = 0,
+  catalog,
+  modelIndex = 0,
   onObjectsChange = () => {},
   onExit = () => {},
 }) {
@@ -15,27 +16,43 @@ export async function enterAR({
   const isShowcaseMode = Array.isArray(contributions);
   const overlayParent = overlay.parentElement;
   const overlayNextSibling = overlay.nextSibling;
-  if (!Number.isInteger(primitiveIndex) || !primitives[primitiveIndex]) {
-    throw new Error("Your assigned primitive is unavailable. Rejoin the room and try again.");
+  if (!Array.isArray(catalog) || !Number.isInteger(modelIndex) || !catalog[modelIndex]) {
+    throw new Error("The selected 3D model is unavailable. Reload the page and try again.");
   }
-  const catalog = overlay.querySelector("#ar-catalog");
-  catalog.replaceChildren();
-  const catalogButtons = primitives.map((primitive, index) => {
+  const catalogElement = overlay.querySelector("#ar-catalog");
+  catalogElement.replaceChildren();
+  const catalogGroups = new Map();
+  const catalogButtons = catalog.map((model, index) => {
+    let items = catalogGroups.get(model.category);
+    if (!items) {
+      const group = document.createElement("div");
+      const heading = document.createElement("span");
+      items = document.createElement("div");
+      group.className = "ar-catalog-group";
+      heading.className = "ar-catalog-heading";
+      heading.textContent = model.category;
+      items.className = "ar-catalog-items";
+      group.append(heading, items);
+      catalogElement.append(group);
+      catalogGroups.set(model.category, items);
+    }
     const button = document.createElement("button");
-    const shape = document.createElement("span");
+    const icon = document.createElement("span");
     const name = document.createElement("span");
     button.className = "ar-item";
     button.type = "button";
-    button.setAttribute("aria-label", `Select ${primitive.name}`);
-    button.setAttribute("aria-pressed", String(index === primitiveIndex));
-    button.classList.toggle("is-selected", index === primitiveIndex);
-    button.dataset.primitiveIndex = String(index);
-    shape.className = "ar-item-shape";
-    shape.setAttribute("aria-hidden", "true");
-    shape.style.setProperty("--primitive-color", `#${primitive.color.toString(16).padStart(6, "0")}`);
-    name.textContent = primitive.name;
-    button.append(shape, name);
-    catalog.append(button);
+    button.setAttribute("aria-label", `Select ${model.name} from ${model.category}`);
+    button.setAttribute("aria-pressed", String(index === modelIndex));
+    button.classList.toggle("is-selected", index === modelIndex);
+    button.dataset.modelIndex = String(index);
+    icon.className = "ar-item-shape";
+    icon.textContent = model.icon || model.category.slice(0, 2);
+    icon.setAttribute("aria-hidden", "true");
+    icon.dataset.category = model.category;
+    name.className = "ar-item-name";
+    name.textContent = model.name;
+    button.append(icon, name);
+    items.append(button);
     return button;
   });
   let sessionRequest;
@@ -134,7 +151,7 @@ export async function enterAR({
   const intersection = new THREE.Vector3();
   let showcaseGroup = null;
   let saveTimer = null;
-  let selectedModelIndex = primitiveIndex;
+  let selectedModelIndex = modelIndex;
   let selectedObject = null;
   let hitTestSource = null;
   let session = null;
@@ -163,23 +180,29 @@ export async function enterAR({
     onExit();
   }
 
-  function selectPrimitive(index) {
-    if (!primitives[index]) return;
+  function selectModel(index) {
+    if (!catalog[index]) return;
     selectedModelIndex = index;
     for (const [buttonIndex, button] of catalogButtons.entries()) {
       const selected = buttonIndex === index;
       button.classList.toggle("is-selected", selected);
       button.setAttribute("aria-pressed", String(selected));
     }
-    controlsHint.textContent = `Selected ${primitives[index].name}. Aim at a surface and tap to place.`;
+    controlsHint.textContent = `Selected ${catalog[index].name}. Aim at a surface and tap to place.`;
   }
 
-  function placeSelected(transform) {
+  async function placeSelected(transform) {
     const matrix = transform.clone();
     const index = selectedModelIndex;
     try {
       if (closed || (usingWebXR && session?.ended)) return;
-      const object = createPrimitive(index);
+      if (placedObjects.size >= 24) {
+        controlsHint.textContent = "You can place up to 24 models in one round.";
+        return;
+      }
+      controlsHint.textContent = `Loading ${catalog[index].name}…`;
+      const object = await createModel(index, catalog);
+      if (closed || (usingWebXR && session?.ended)) return;
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
       const hitScale = new THREE.Vector3();
@@ -203,8 +226,8 @@ export async function enterAR({
       setSelectedObject(object);
       scheduleObjectSave();
     } catch (error) {
-      console.error(`Could not place ${primitives[index].name}:`, error);
-      controlsHint.textContent = `Could not place your ${primitives[index].name.toLowerCase()}. Try again.`;
+      console.error(`Could not place ${catalog[index].name}:`, error);
+      controlsHint.textContent = `Could not load ${catalog[index].name}. Check your connection and try again.`;
     }
   }
 
@@ -334,7 +357,7 @@ export async function enterAR({
       const contribution = contributions[playerIndex];
       const playerGroup = new THREE.Group();
       for (const [objectIndex, entry] of contribution.objects.entries()) {
-        const object = createPrimitive(entry.modelIndex);
+        const object = await createModel(entry.modelIndex, catalog);
         object.scale.setScalar(entry.scale);
         if (Array.isArray(entry.position) && Array.isArray(entry.quaternion)) {
           object.position.fromArray(entry.position);
@@ -395,8 +418,8 @@ export async function enterAR({
     event.preventDefault();
     event.stopPropagation();
   };
-  const onPrimitiveSelect = (event) => {
-    selectPrimitive(Number(event.currentTarget.dataset.primitiveIndex));
+  const onModelSelect = (event) => {
+    selectModel(Number(event.currentTarget.dataset.modelIndex));
   };
   const overlayButtons = Array.from(overlay.querySelectorAll("button"));
   const onPlaceClick = () => placeFromReticle();
@@ -413,7 +436,7 @@ export async function enterAR({
   };
 
   promptElement.textContent = prompt;
-  selectPrimitive(primitiveIndex);
+  selectModel(modelIndex);
   overlay.classList.toggle("camera-preview", !usingWebXR);
   overlay.classList.toggle("ar-showcase-mode", isShowcaseMode);
   overlay.hidden = false;
@@ -425,7 +448,7 @@ export async function enterAR({
     button.addEventListener("beforexrselect", onBeforeXRSelect);
   }
   for (const button of catalogButtons) {
-    button.addEventListener("click", onPrimitiveSelect);
+    button.addEventListener("click", onModelSelect);
   }
   addButton.addEventListener("click", onPlaceClick);
   scaleDownButton.addEventListener("click", onScaleDown);
@@ -458,7 +481,7 @@ export async function enterAR({
       button.removeEventListener("beforexrselect", onBeforeXRSelect);
     }
     for (const button of catalogButtons) {
-      button.removeEventListener("click", onPrimitiveSelect);
+      button.removeEventListener("click", onModelSelect);
     }
     addButton.removeEventListener("click", onPlaceClick);
     scaleDownButton.removeEventListener("click", onScaleDown);
@@ -545,7 +568,7 @@ export async function enterAR({
         console.error("Could not end the failed immersive AR session:", endError);
       });
       cleanup();
-      console.error("Could not start the AR primitive viewer:", error);
+      console.error("Could not start the AR model viewer:", error);
       throw immersiveSessionError(error);
     }
   }
@@ -562,8 +585,8 @@ export async function enterAR({
   }
   if (!isShowcaseMode) {
     controlsHint.textContent = usingWebXR && !hitTestSource
-      ? `Your shape: ${primitives[primitiveIndex].name}. Surface detection is unavailable; tap to place it in front of you.`
-      : `Your shape: ${primitives[primitiveIndex].name}. Aim at a surface and tap to place.`;
+      ? `Your model: ${catalog[modelIndex].name}. Surface detection is unavailable; tap to place it in front of you.`
+      : `Your model: ${catalog[modelIndex].name}. Aim at a surface and tap to place.`;
   }
 
   isActive = true;

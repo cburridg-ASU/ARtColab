@@ -8,8 +8,10 @@ const { Pool } = require("pg");
 const { WebSocket, WebSocketServer } = require("ws");
 
 const publicDirectory = path.join(__dirname, "public");
+const threeDAssetsDirectory = path.join(__dirname, "3DAssets");
+const modelCatalog = require("./public/model-catalog.json");
 const roomCodeCharacters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const primitiveCount = 8;
+const maxPlayers = 8;
 const roomLifetime = 2 * 60 * 60 * 1000;
 const testRoundDurationMs = Number(process.env.ROUND_DURATION_MS) || null;
 const maxRequestBytes = 4096;
@@ -25,6 +27,7 @@ const contentTypes = {
   ".ico": "image/x-icon",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".gltf": "model/gltf+json",
   ".png": "image/png",
   ".svg": "image/svg+xml",
 };
@@ -64,11 +67,11 @@ function getRoomSnapshot(room) {
     phase: room.phase,
     timerEndsAt: room.timerEndsAt,
     durationMinutes: room.durationMinutes,
-    players: Array.from(room.players.values(), ({ id, name, connected, primitiveIndex }) => ({
+    players: Array.from(room.players.values(), ({ id, name, connected, modelIndex }) => ({
       id,
       name,
       connected,
-      primitiveIndex,
+      modelIndex,
     })),
   };
 }
@@ -214,16 +217,16 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 400, { error: "Enter a player name to join." });
         return;
       }
-      if (room.players.size >= primitiveCount) {
-        sendJson(response, 409, { error: "This room is full. Each player needs a unique primitive." });
+      if (room.players.size >= maxPlayers) {
+        sendJson(response, 409, { error: "This room is full. Each player needs a unique starting model." });
         return;
       }
 
       const name = body.name.trim().slice(0, 20);
       const playerId = crypto.randomUUID();
-      const primitiveIndex = room.players.size;
-      room.players.set(playerId, { id: playerId, name, connected: false, primitiveIndex });
-      sendJson(response, 201, { code, playerId, name, primitiveIndex });
+      const modelIndex = room.players.size;
+      room.players.set(playerId, { id: playerId, name, connected: false, modelIndex });
+      sendJson(response, 201, { code, playerId, name, modelIndex });
       broadcastRoom(room);
       return;
     } catch (error) {
@@ -312,7 +315,7 @@ const server = http.createServer(async (request, response) => {
         object &&
         Number.isInteger(object.modelIndex) &&
         object.modelIndex >= 0 &&
-        object.modelIndex < 8 &&
+        object.modelIndex < modelCatalog.length &&
         Number.isFinite(object.scale) &&
         object.scale >= 0.35 &&
         object.scale <= 3 &&
@@ -468,6 +471,21 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     filePath = examplePath;
+  } else if (pathnameFromUrl.startsWith("/3d-assets/")) {
+    const assetPath = path.resolve(
+      threeDAssetsDirectory,
+      pathnameFromUrl.slice("/3d-assets/".length),
+    );
+    const assetExtension = path.extname(assetPath).toLowerCase();
+    if (
+      !assetPath.startsWith(`${threeDAssetsDirectory}${path.sep}`) ||
+      ![".bin", ".gltf", ".png"].includes(assetExtension)
+    ) {
+      response.writeHead(404);
+      response.end("Not Found");
+      return;
+    }
+    filePath = assetPath;
   } else if (pathnameFromUrl.startsWith("/ar-assets/")) {
     const assetPath = path.resolve(
       arAssetsDirectory,
@@ -513,7 +531,9 @@ const server = http.createServer(async (request, response) => {
         ? "model/gltf-binary"
         : contentTypes[path.extname(filePath).toLowerCase()] || "application/octet-stream",
       "Content-Length": stats.size,
-      "Cache-Control": pathnameFromUrl.startsWith("/ar-assets/") ? "public, max-age=3600" : "no-cache",
+      "Cache-Control": pathnameFromUrl.startsWith("/3d-assets/") || pathnameFromUrl.startsWith("/ar-assets/")
+        ? "public, max-age=3600"
+        : "no-cache",
       "X-Content-Type-Options": "nosniff",
     });
 

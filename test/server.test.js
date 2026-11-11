@@ -145,7 +145,7 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /data-zoom-out/);
   assert.match(joinPage, /id="exit-ar"/);
   assert.match(joinPage, /Time’s up!/);
-  assert.match(joinPage, /Choose a primitive to place/);
+  assert.match(joinPage, /Choose a model to place/);
   assert.match(joinPage, /id="ar-catalog"/);
   assert.doesNotMatch(joinPage, /data-model-index/);
   assert.match(joinPage, /id="add-ar-object"/);
@@ -181,23 +181,58 @@ test("serves the combined showcase module", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(module, /export async function renderShowcase/);
-  assert.match(module, /createPrimitive/);
-  assert.doesNotMatch(module, /GLTFLoader/);
+  assert.match(module, /createModel/);
+  assert.doesNotMatch(module, /createPrimitive|primitives\.js/);
   assert.match(module, /usesPlayerOrigin \? 0 : -center\.x/);
   assert.match(module, /const zoomBy = \(factor\) =>/);
   assert.match(module, /data-zoom-in/);
   assert.match(module, /zoomBy\(Math\.exp\(event\.deltaY \* 0\.001\)\)/);
 });
 
-test("serves the primitive geometry factory", async () => {
-  const response = await fetch(`${baseUrl}/primitives.js`);
-  const module = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(module, /export const primitives = \[/);
-  assert.equal((module.match(/\{ name:/g) || []).length, 8);
-  assert.match(module, /new THREE\.BoxGeometry/);
-  assert.match(module, /new THREE\.SphereGeometry/);
-  assert.doesNotMatch(module, /GLTFLoader|ar-assets/);
+test("serves the curated 3D model catalog and loader", async () => {
+  const [catalogResponse, loaderResponse] = await Promise.all([
+    fetch(`${baseUrl}/model-catalog.json`),
+    fetch(`${baseUrl}/models.js`),
+  ]);
+  const catalog = await catalogResponse.json();
+  const loader = await loaderResponse.text();
+  assert.equal(catalogResponse.status, 200);
+  assert.equal(catalog.length, 32);
+  assert.deepEqual(
+    Object.fromEntries([...new Set(catalog.map((model) => model.category))]
+      .map((category) => [category, catalog.filter((model) => model.category === category).length])),
+    {
+      "Board Game Bits": 8,
+      "Furniture Bits": 8,
+      "Platformer Pack": 8,
+      "RPG Tools Bits": 8,
+    },
+  );
+  assert.equal(loaderResponse.status, 200);
+  assert.match(loader, /GLTFLoader/);
+  assert.match(loader, /loader\.loadAsync\(definition\.url\)/);
+  assert.match(loader, /const targetSize = 0\.55/);
+  assert.doesNotMatch(loader, /createPrimitive/);
+
+  const assetUrls = new Set();
+  for (const model of catalog) {
+    const response = await fetch(new URL(model.url, baseUrl));
+    assert.equal(response.status, 200, `Missing model ${model.name}`);
+    const gltf = await response.json();
+    for (const uri of [
+      ...(gltf.buffers || []).map((buffer) => buffer.uri),
+      ...(gltf.images || []).map((image) => image.uri),
+    ]) {
+      if (!uri || uri.startsWith("data:")) continue;
+      const assetUrl = new URL(uri, response.url);
+      assert.equal(assetUrl.origin, baseUrl, `Unexpected external asset dependency: ${uri}`);
+      assetUrls.add(assetUrl.href);
+    }
+  }
+  const assetResponses = await Promise.all(
+    [...assetUrls].map((url) => fetch(url, { method: "HEAD" })),
+  );
+  assert.ok(assetResponses.every((response) => response.status === 200));
 });
 
 test("serves the AR module and Three.js runtime", async () => {
@@ -228,8 +263,8 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.equal(arResponse.status, 200);
   assert.match(arModule, /requestSession\("immersive-ar"/);
   assert.match(arModule, /mediaDevices\?\.getUserMedia/);
-  assert.match(arModule, /createPrimitive/);
-  assert.doesNotMatch(arModule, /GLTFLoader/);
+  assert.match(arModule, /createModel/);
+  assert.doesNotMatch(arModule, /createPrimitive|primitives\.js/);
   assert.match(arModule, /placeSelected/);
   assert.doesNotMatch(arModule, /await navigator\.xr\?\.isSessionSupported/);
   assert.ok(
@@ -254,7 +289,7 @@ test("serves the AR module and Three.js runtime", async () => {
     "attach the DOM overlay to the XR document before requesting the session",
   );
   assert.ok(
-    arModule.indexOf("const catalogButtons = primitives.map") <
+    arModule.indexOf("const catalogButtons = catalog.map") <
       arModule.indexOf('navigator.xr.requestSession("immersive-ar"'),
     "build catalog controls before entering immersive AR",
   );
@@ -271,12 +306,12 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(arModule, /Camera preview of the combined scene/);
   assert.match(arModule, /renderer\.domElement\.style\.pointerEvents = isShowcaseMode \? "none" : "auto"/);
   assert.match(arModule, /Android/i);
-  assert.match(arModule, /primitiveIndex/);
-  assert.match(arModule, /primitives\.map\(\(primitive, index\) =>/);
-  assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
+  assert.match(arModule, /modelIndex/);
+  assert.match(arModule, /catalog\.map\(\(model, index\) =>/);
+  assert.match(arModule, /button\.addEventListener\("click", onModelSelect\)/);
   assert.match(arModule, /showcasePosition\.y -= 1\.3/);
   assert.match(arModule, /showcaseForward\.y = 0/);
-  assert.match(arModule, /button\.addEventListener\("click", onPrimitiveSelect\)/);
+  assert.match(arModule, /button\.addEventListener\("click", onModelSelect\)/);
   assert.equal(threeResponse.status, 200);
   assert.match(threeModule, /WebGLRenderer/);
   assert.equal(threeCoreResponse.status, 200);
@@ -294,7 +329,24 @@ test("serves the AR module and Three.js runtime", async () => {
   assert.match(joinModule, /roundComplete && !isViewingShowcase/);
 });
 
-test("serves the supplied furniture thumbnails and GLB models", async () => {
+test("serves selected 3D assets and rejects paths outside the asset folder", async () => {
+  const [modelResponse, binaryResponse, textureResponse, traversalResponse] = await Promise.all([
+    fetch(`${baseUrl}/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/building_red.gltf`, { method: "HEAD" }),
+    fetch(`${baseUrl}/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/building_red.bin`, { method: "HEAD" }),
+    fetch(`${baseUrl}/3d-assets/KayKit_BoardGameBits_1.0_FREE/Assets/gltf/boardgame_bits_texture.png`, { method: "HEAD" }),
+    fetch(`${baseUrl}/3d-assets/..%5C..%5Cserver.js`),
+  ]);
+
+  assert.equal(modelResponse.status, 200);
+  assert.equal(modelResponse.headers.get("content-type"), "model/gltf+json");
+  assert.equal(binaryResponse.status, 200);
+  assert.equal(binaryResponse.headers.get("content-type"), "application/octet-stream");
+  assert.equal(textureResponse.status, 200);
+  assert.match(textureResponse.headers.get("content-type"), /^image\/png$/);
+  assert.equal(traversalResponse.status, 404);
+});
+
+test("still serves the supplied furniture thumbnails and GLB models", async () => {
   const [thumbnailResponse, modelResponse, traversalResponse] = await Promise.all([
     fetch(`${baseUrl}/ar-assets/pngs/armchair.png`, { method: "HEAD" }),
     fetch(`${baseUrl}/ar-assets/glbs/dylan_armchair_yolk_yellow.glb`, { method: "HEAD" }),
@@ -333,7 +385,7 @@ test("rejects unsupported methods", async () => {
   assert.equal(response.headers.get("allow"), "GET, HEAD");
 });
 
-test("assigns unique primitives and limits rooms to eight players", async () => {
+test("assigns distinct starter models and limits rooms to eight players", async () => {
   const createResponse = await fetch(`${baseUrl}/api/rooms`, { method: "POST" });
   const { code } = await createResponse.json();
   const assignedIndexes = [];
@@ -346,7 +398,7 @@ test("assigns unique primitives and limits rooms to eight players", async () => 
     });
     const player = await response.json();
     assert.equal(response.status, 201);
-    assignedIndexes.push(player.primitiveIndex);
+    assignedIndexes.push(player.modelIndex);
   }
 
   assert.deepEqual(assignedIndexes, [0, 1, 2, 3, 4, 5, 6, 7]);
@@ -433,10 +485,10 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const player = await joinResponse.json();
   assert.equal(joinResponse.status, 201);
   assert.equal(player.name, "Alex");
-  assert.equal(player.primitiveIndex, 0);
+  assert.equal(player.modelIndex, 0);
   const waitingRoom = await waitingRoomUpdate;
   assert.equal(waitingRoom.players[0].connected, false);
-  assert.equal(waitingRoom.players[0].primitiveIndex, 0);
+  assert.equal(waitingRoom.players[0].modelIndex, 0);
 
   const { socket: playerSocket, opened: playerOpened } = connectWebSocket(
     `${baseUrl.replace("http:", "ws:")}/ws?role=player&code=${room.code}&playerId=${player.playerId}`,
@@ -465,16 +517,16 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
   const secondPlayer = await secondJoinResponse.json();
   const roomWithSecondPlayer = await secondRoomUpdate;
   assert.equal(secondJoinResponse.status, 201);
-  assert.equal(secondPlayer.primitiveIndex, 1);
-  assert.notEqual(secondPlayer.primitiveIndex, player.primitiveIndex);
-  assert.equal(roomWithSecondPlayer.players[1].primitiveIndex, 1);
+  assert.equal(secondPlayer.modelIndex, 1);
+  assert.notEqual(secondPlayer.modelIndex, player.modelIndex);
+  assert.equal(roomWithSecondPlayer.players[1].modelIndex, 1);
   const { socket: secondPlayerSocket, opened: secondPlayerOpened } = connectWebSocket(
     `${baseUrl.replace("http:", "ws:")}/ws?role=player&code=${room.code}&playerId=${secondPlayer.playerId}`,
   );
   context.after(() => secondPlayerSocket.close());
   const secondPlayerSnapshot = waitForMessage(secondPlayerSocket, (message) => message.type === "room");
   await secondPlayerOpened;
-  assert.equal((await secondPlayerSnapshot).players[1].primitiveIndex, 1);
+  assert.equal((await secondPlayerSnapshot).players[1].modelIndex, 1);
 
   const activeRoomPromise = waitForMessage(
     hostSocket,
@@ -535,6 +587,20 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     }),
   });
   assert.equal(saveResponse.status, 200);
+  const lastCatalogModelSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      playerId: player.playerId,
+      objects: [{
+        modelIndex: 31,
+        scale: 1,
+        position: [0, 0, 0],
+        quaternion: [0, 0, 0, 1],
+      }],
+    }),
+  });
+  assert.equal(lastCatalogModelSave.status, 200);
   const invalidPlacementSpaceSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -545,21 +611,21 @@ test("creates rooms, validates joins, and broadcasts connected players", async (
     }),
   });
   assert.equal(invalidPlacementSpaceSave.status, 400);
-  const otherPlayerPrimitiveSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
+  const otherPlayerModelSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       playerId: player.playerId,
       placementSpace: "player-origin",
       objects: [{
-        modelIndex: secondPlayer.primitiveIndex,
+        modelIndex: secondPlayer.modelIndex,
         scale: 1,
         position: [0, 0, 0],
         quaternion: [0, 0, 0, 1],
       }],
     }),
   });
-  assert.equal(otherPlayerPrimitiveSave.status, 200);
+  assert.equal(otherPlayerModelSave.status, 200);
   const invalidSave = await fetch(`${baseUrl}/api/rooms/${room.code}/contributions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

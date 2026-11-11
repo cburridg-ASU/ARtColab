@@ -1,7 +1,8 @@
 import * as THREE from "/vendor/three.module.js";
-import { createPrimitive, primitives } from "/primitives.js";
+import { createModel, getModelCatalog } from "/models.js";
 
 export async function renderShowcase(canvas, contributions, playerList) {
+  const catalog = await getModelCatalog();
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0xf5f2e9);
@@ -31,7 +32,7 @@ export async function renderShowcase(canvas, contributions, playerList) {
     playerList.replaceChildren();
     if (!contributions.length) {
       const item = document.createElement("li");
-      item.textContent = "No shapes were placed this round.";
+      item.textContent = "No models were placed this round.";
       playerList.append(item);
     }
     for (const contribution of contributions) {
@@ -44,11 +45,11 @@ export async function renderShowcase(canvas, contributions, playerList) {
   for (let playerIndex = 0; playerIndex < contributions.length; playerIndex += 1) {
     const contribution = contributions[playerIndex];
     const playerGroup = new THREE.Group();
-    contribution.objects.forEach((entry, objectIndex) => {
-      if (!Number.isInteger(entry.modelIndex) || !primitives[entry.modelIndex]) {
-        throw new Error("A saved object uses an unknown primitive.");
+    for (const [objectIndex, entry] of contribution.objects.entries()) {
+      if (!Number.isInteger(entry.modelIndex) || !catalog[entry.modelIndex]) {
+        throw new Error("A saved object uses an unknown 3D model.");
       }
-      const object = createPrimitive(entry.modelIndex);
+      const object = await createModel(entry.modelIndex, catalog);
       object.scale.setScalar(entry.scale);
       if (Array.isArray(entry.position) && Array.isArray(entry.quaternion)) {
         object.position.fromArray(entry.position);
@@ -57,7 +58,7 @@ export async function renderShowcase(canvas, contributions, playerList) {
         object.position.set(objectIndex * 1.25, 0, 0);
       }
       playerGroup.add(object);
-    });
+    }
     playerGroup.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(playerGroup);
     if (!bounds.isEmpty()) {
