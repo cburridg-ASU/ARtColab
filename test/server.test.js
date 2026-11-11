@@ -154,6 +154,27 @@ test("serves host and player screens", async () => {
   assert.match(joinPage, /type="module" src="\/join\.js"/);
 });
 
+test("serves the host and player modules", async () => {
+  const [hostResponse, joinResponse] = await Promise.all([
+    fetch(`${baseUrl}/host.js`),
+    fetch(`${baseUrl}/join.js`),
+  ]);
+  const [hostModule, joinModule] = await Promise.all([
+    hostResponse.text(),
+    joinResponse.text(),
+  ]);
+
+  assert.equal(hostResponse.status, 200);
+  assert.equal(hostResponse.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(hostModule, /\/api\/rooms/);
+  assert.match(hostModule, /renderShowcase/);
+  assert.equal(joinResponse.status, 200);
+  assert.equal(joinResponse.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(joinModule, /\/api\/rooms/);
+  assert.match(joinModule, /enterAR/);
+  assert.match(joinModule, /renderShowcase/);
+});
+
 test("serves the combined showcase module", async () => {
   const response = await fetch(`${baseUrl}/showcase.js`);
   const module = await response.text();
